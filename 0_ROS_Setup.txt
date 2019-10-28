@@ -168,7 +168,11 @@ RIDAR_Install
 	2. vi CMakeList.txt
 		find_package를 아래 와 같이 수정한다.
 #######################################################################################################
-find_package(catkin REQUIRED COMPONENTS roscpp std_msgs message_generation)
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  std_msgs
+  message_generation
+)
 #######################################################################################################
 		catkin_package 위에 아래 내용을 추가한다.
 #######################################################################################################
@@ -183,17 +187,21 @@ add_dependencies(my_msg_subscriber my_test_package_generate_messages_cpp)
 #######################################################################################################
 		catkin_package의 주석을 아래와 같이 해제한다.
 #######################################################################################################
-catkin_package
-(
-	#INCLUDE_DIRS include
-	LIBRARIES my_test_package
-	CATKIN_DEPENDS roscpp std_msgs
-	#DEPENDS system_lib
+catkin_package(
+  #INCLUDE_DIRS include
+  LIBRARIES my_test_package
+  CATKIN_DEPENDS roscpp std_msgs
+  #DEPENDS system_lib
 )
+
 #######################################################################################################
 		include_directories의 내용을 다음과 같이 수정한다.
 #######################################################################################################
-include_directories(include ${catkin_INCLUDE_DIRS})
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+
 //include : include 폴더이다. 코딩중 필요한 헤더를 이 폴더에 넣는다.
 //${catkin_INCLUDE_DIRS} : ROS 기본 헤더 경로
 #######################################################################################################
