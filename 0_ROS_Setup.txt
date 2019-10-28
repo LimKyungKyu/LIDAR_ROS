@@ -186,7 +186,7 @@ add_dependencies(my_msg_subscriber my_test_package_generate_messages_cpp)
 catkin_package
 (
 	#INCLUDE_DIRS include
-	LIBRARIES oroca_ros_tutorials
+	LIBRARIES my_test_package
 	CATKIN_DEPENDS roscpp std_msgs
 	#DEPENDS system_lib
 )
