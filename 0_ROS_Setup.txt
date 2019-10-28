@@ -280,7 +280,12 @@ int main(int argc, char **argv) // 노드 메인 함수
 #######################################################################################################
 
 	노드를 생성한다
-	rosdep init
+	sudo rosdep init
+		sudo rosdep init
+		다른 ROS를 실행했었으면 init파일이 존재한다.
+		지우고 다시 rosdep init해준다.
+		sudo rm -rf /etc/ros/rosdep/sources.list.d/20-default.list
+		sudo rosdep init
 	rosdep update
 	cd ~/test_package && catkin_make
 	roscore
