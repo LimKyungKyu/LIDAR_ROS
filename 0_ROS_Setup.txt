@@ -194,6 +194,7 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 //include : include 폴더이다. 코딩중 필요한 헤더를 이 폴더에 넣는다.
 //${catkin_INCLUDE_DIRS} : ROS 기본 헤더 경로
 #######################################################################################################
+
 	위의 vi CMakeList.txt에서 넣은
 	add_message_files(FILES msgTutorial.msg) 옵션은
 	노드에서 사용할 메시지인 msgTutorial.msg를 빌드할때 포함하란 뜻이다.
@@ -202,6 +203,7 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 		mkdir msg && cd msg && vi msgTutorial.msg 하고 아래 내용 입력
 			int32 data
 			(헤더를 만들때 int32형으로 만든다는 뜻)
+
 	위의 vi CMakeList.txt에서 넣은
 	add_executable(my_msg_publisher src/my_msg_publisher.cpp) 옵션은
 	my_msg_publisher.cpp를 빌드해서 my_msg_publisher를 만들라는 뜻이다.
@@ -240,6 +242,7 @@ int main(int argc, char **argv) // 노드 메인 함수
 	return 0;
 }
 #######################################################################################################
+
 	add_executable(my_msg_subscriber src/my_msg_subscriber.cpp) 도 마찬가지로 생성해준다.
 		vi my_msg_subscriber.cpp 하고 아래 내용 입력
 #######################################################################################################
@@ -270,6 +273,7 @@ int main(int argc, char **argv) // 노드 메인 함수
 	return 0;
 }
 #######################################################################################################
+
 	노드를 생성한다
 	rosdep init
 	rosdep update
