@@ -188,11 +188,12 @@ add_dependencies(my_msg_subscriber my_test_package_generate_messages_cpp)
 		catkin_package의 주석을 아래와 같이 해제한다.
 #######################################################################################################
 catkin_package(
-	#INCLUDE_DIRS include
-	LIBRARIES my_test_package
-	CATKIN_DEPENDS roscpp std_msgs
-	#DEPENDS system_lib
+  #INCLUDE_DIRS include
+  LIBRARIES my_test_package
+  CATKIN_DEPENDS roscpp std_msgs
+  #DEPENDS system_lib
 )
+
 #######################################################################################################
 		include_directories의 내용을 다음과 같이 수정한다.
 #######################################################################################################
@@ -259,6 +260,7 @@ int main(int argc, char **argv) // 노드 메인 함수
   return 0;
 }
 
+
 #######################################################################################################
 
 	5. add_executable(my_msg_subscriber src/my_msg_subscriber.cpp) 도 마찬가지로 생성해준다.
@@ -281,6 +283,7 @@ void msgCallback(const my_test_package::msgTutorial::ConstPtr& msg)
 int main(int argc, char **argv) // 노드 메인 함수
 {
   ros::init(argc, argv, "my_msg_subscriber"); // 노드명 초기화
+
   ros::NodeHandle nh; // ROS 시스템과 통신을 위한 노드 핸들 선언
 
   // 구독자 선언, my_test_package 패키지의 msgTutorial 메시지 파일을 이용한
@@ -307,6 +310,7 @@ int main(int argc, char **argv) // 노드 메인 함수
 	cd ~/my_test && catkin_make
 	echo "source ~/my_test/devel/setup.bash" >> ~/.bashrc
 	source ~/.bashrc
+	모든 터미널을 종료 후에 새로 킨다.
 	roscore
 	rosrun my_test_package my_msg_publisher
 	rosrun my_test_package my_msg_subscriber
