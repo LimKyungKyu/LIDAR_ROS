@@ -65,8 +65,11 @@ if __name__=='__main__':
 
 chmod +x my_python_msg_subscriber.py my_python_msg_publisher.py
 cd ~/my_python_test && catkin_make
-./my_python_test/devel/setup.bash
+echo "source ~/my_python_test/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 
+roscore
+rosrun my_python_package my_python_msg_publisher.py
+rosrun my_python_package my_python_msg_subscriber.py
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
