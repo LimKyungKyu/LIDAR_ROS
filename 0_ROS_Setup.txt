@@ -324,7 +324,68 @@ int main(int argc, char **argv) // 노드 메인 함수
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        터틀봇을 게임패드로 움직이는 예제 1
+        게임패드로 Jetson nano 움직이는 예제 1
+
+	You need to prepare an SD card which should be at least 64G 
+	User Etcher software to write image (unzip above) to SD card.
+
+	나노를 분리한 상태로 건전지의 전원을 충전한다.
+	충전이 완료되면 충전기의 전원을 반드시 뽑는다.
+
+	젯봇에서 분리된 상태의 나노를 나노 전원 입력 커넥터로 먼저 킨다. (나노의 초기 아이디, 비밀번호 : jetbot)
+	와이파이를 연결하고 나노의 전원을 끈다.
+	나노 전원 입력 커넥터를 반드시 분리한다.
+
+	젯봇을 만든다.
+	젯봇의 스위치를 ON으로 만들어서 나노를 다시 킨다.
+	OLED에 IP주소가 나온다.
+
+	젯봇의 Public IP를 획득하여
+	공유기에서 포트 포워딩 시킨다.
+	내부아이피주소 입력, 외부포트 8282
+	내부포트 8888
+	http://<젯봇의 Public IP>:8282 이렇게 접속 가능하다.
+
+	# 기본 젯봇 움직이기 #
+	책상에 올려놓지 말고 바닥의 넓은 공간에 내려놓습니다.
+	아래 위치로 이동해서 파일을 엽니다.
+	 ~/Notebooks/basic_motion/
+	basic_motion.ipynb
+
+	# 원격 조종 예제 #
+	~/Notebooks/teleoperation/
+	teleoperation.ipynb
+	Connect USB adapter to PC
+
+	게임패드 설정
+	게임패드는 두가지 모드를 지원한다.
+	1. PC/PS3/Andorid mode (초기값)
+	2. XBox 360 mode. 
+	예제는 XBox 360모드로 진행한다.
+	홈 버튼을 7초동안 누른다.
+	left joystick is mapped to axes[0] and axes[1]
+	right joystick is mapped to axes[2] and axes[3]
+
+	# 학습된 충돌방지 예제 #
+	1. 벽에 대한 데이터 수집
+	~/Notebooks/collision_avoidance/
+	data_collection.ipynb	
+	2. 학습 ( Neural network 사용 )
+	tain_model.ipynb
+	3. 실행
+	live_demo.ipynb
+
+	# 오브젝트 트래킹 #
+	~/Notebooks/object_following/ 폴더에 아래의 미리 학습된 자료 다운로드
+	https://drive.google.com/file/d/1RnNBHPDphIOWwHCSfeMCWQ7XN3w3tKFD/view
+	( 충돌 방지로도 잘 학습된 자료이다. )
+	live_demo.ipynb
+
+	# 라인 트래킹 #
+	~/Notebooks/road_following/
+	data-collection.ipynb
+	
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	참고
