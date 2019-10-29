@@ -1,0 +1,27 @@
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Python Subscriber만 수정
+from std_msgs.msg import Int32
+여기서 Int32는 cpp에서 정의한 .msg의 데이터 형식이다.
+vi my_python_msg_subscriber.py
+############################################################
+#!/usr/bin/env python
+
+import rospy
+from std_msgs.msg import Int32
+
+def callback(data):
+	rospy.loginfo("I heard %d", data.data)
+
+def listener():
+	rospy.init_node('listener',anonymous=True)
+
+	rospy.Subscriber("my_package_msg", Int32, callback)
+
+	rospy.spin()
+
+if __name__=='__main__':
+	listener()
+############################################################
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
