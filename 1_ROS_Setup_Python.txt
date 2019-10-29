@@ -3,7 +3,70 @@
 ROS - Python 패키지 만들기
 https://htsstory.tistory.com/entry/ROS-python%ED%8C%8C%EC%9D%B4%EC%8D%AC-%ED%94%84%EB%A1%9C%EA%B7%B8%EB%9E%98%EB%B0%8D-1-%ED%86%A0%ED%94%BD-%EB%A9%94%EC%8B%9C%EC%A7%80-%ED%86%B5%EC%8B%A0
 
-cd && mkdir -p my_python_package_test/src && cd my_python_package_test/src
+패키지 초기화
+cd && mkdir -p my_python_test/src && cd my_python_test/src
 catkin_create_pkg my_python_package std_msgs rospy
+
+메세지 형식 작성
+cd my_python_package && mkdir msg && cd msg && vi my_python_msg.msg 하고 아래 내용 입력
+int64 num
+
+package.xml 수정
+cd ~/my_python_test/src/my_python_package && vi package.xml 하고 적절히 비슷한 위치에 아래 내용 입력
+<build_depend>message_generation</build_depend>
+<exec_depend>message_runtime</exec_depend>
+
+Publisher 작성
+cd src && vi my_python_msg_publisher.py
+############################################################
+#!/usr/bin/env python
+
+import rospy
+from std_msgs.msg import String
+
+def talker():
+      pub = rospy.Publisher('chatter',String,queue_size=10)
+      rospy.init_node('talker', anonymous = True)
+      rate = rospy.Rate(1) # 1hz, 1초에 한번 발생
+      while not rospy.is_shutdown():
+            hello_str = "hello world %s" % rospy.get_time()
+            rospy.loginfo(hello_str)
+            pub.publish(hello_str)
+            rate.sleep()
+
+if __name__=='__main__':
+      try:
+            talker()
+     except rospy.ROSInterruptException:
+            pass
+############################################################
+
+Subscriber 작성
+vi my_python_msg_subscriber.py
+############################################################
+#!/usr/bin/env python
+
+import rospy
+from std_msgs.msg import String
+
+def callback(data):
+      rospy.loginfo(rospy.get_caller_id() + "I heard %s", data.data)
+
+def listener():
+      rospy.init_node('listener',anonymous=True)
+
+      rospy.Subscriber("chatter", String, callback)
+
+      rospy.spin()
+
+if __name__=='__main__':
+      listener()
+############################################################
+
+chmod +x my_python_msg_subscriber.py my_python_msg_publisher.py
+cd ~/my_python_test && catkin_make
+./my_python_test/devel/setup.bash
+source ~/.bashrc
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
