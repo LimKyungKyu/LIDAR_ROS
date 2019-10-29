@@ -270,13 +270,14 @@ int main(int argc, char **argv)
   {
     my_cpp_package::my_msg_setting msg; // my_msg_setting.msg에서 지정한 형식으로 msg 라는 메시지를 선언
 
+    //msg.stamp = ros::Time::now();
     msg.data = count;
     // count 라는 변수의 값을 msg.data에 저장
     // 이때 .data에 저장 할 수 있는 이유는 my_msg_setting.msg를 int32 'data' 라고 만들었기 때문이다.
     // abcd라고 만들었으면 msg.abcd = count; 라고 저장했을것이다.
 
     ROS_INFO("send msg = %d", count); // ROS_INFO 라는 ROS 함수를 이용해서 count 변수를 표시해본다.
-
+    //ROS_INFO("send msg = %d", ros::Time::now());
     my_cpp_pub.publish(msg); // 메시지를 발행한다. 위에서 설정한 1Hz 간격으로 발행된다.
 
     loop_rate.sleep(); // 위에서 정한 hz에 의해 슬립에 들어간다.
@@ -319,7 +320,7 @@ int main(int argc, char **argv) // 노드 메인 함수
 
 4-5. 빌드를 수행한다. 
 cd ~/my_cpp_test && catkin_make
-echo "source ~/my_test/devel/setup.bash" >> ~/.bashrc
+echo "source ~/my_cpp_test/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 모든 터미널을 종료한다.
 roscore # 터미널 1 #

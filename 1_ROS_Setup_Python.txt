@@ -14,7 +14,7 @@ cd ~/my_python_test/src/my_python_package && vi package.xml
 <exec_depend>message_runtime</exec_depend>
 
 Publisher 작성
-cd src && vi my_python_msg_publisher.py
+cd && cd ~/my_python_test/src/my_python_package/src && vi my_python_msg_publisher.py
 chatter : 토픽명, my_subscriber_node : 노드명
 ############################################################
 #!/usr/bin/env python
@@ -65,6 +65,8 @@ cd ~/my_python_test && catkin_make
 echo "source ~/my_python_test/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 
+모든 터미널을 종료하고 다시 킨다.
+또는 모든 터미널에서 source ~/.bashrc를 입력한다.
 roscore # 터미널 1 #
 rosrun my_python_package my_python_msg_publisher.py # 터미널 2 #
 rosrun my_python_package my_python_msg_subscriber.py # 터미널 3 #
@@ -109,15 +111,16 @@ cd && cd my_python_test/src/my_python_package/src && vi my_python_msg_publisher.
 #!/usr/bin/env python
 
 import rospy
-from std_msgs.msg import Int32
+from my_python_package.msg import my_msg_setting_python
 
 def talker():
-	pub = rospy.Publisher('python_topic', Int32, queue_size=10)
+	pub = rospy.Publisher('python_topic', my_msg_setting_python, queue_size=10)
 	rospy.init_node('my_publisher_node', anonymous=True)
 	rate = rospy.Rate(1)
 	count = 1
 	while not rospy.is_shutdown():
 		pub.publish(count)
+		rospy.loginfo(count)
 		count += 1
 		rate.sleep()
 
@@ -154,38 +157,14 @@ rosrun my_python_package my_python_msg_subscriber.py # 터미널 3 #
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-3. cpp Publisher의 값을 python Subscriber로 받기 2 ( 사용자 msg 파일, 숫자 )
-이때 cpp의 자료형을 사용해야하므로 msg파일은 cpp것을 msg폴더에 복사해서 붙여넣는다.
-cd && cd my_python_test/src/my_python_package/src && vi my_python_msg_subscriber.py
-############################################################
-#!/usr/bin/env python
-
-import rospy
-from my_python_package.msg import my_msg_setting
-
-def callback(data):
-	rospy.loginfo("I heard %d", data.data)
-
-def listener():
-	rospy.init_node('my_subscriber_node',anonymous=True)
-	rospy.Subscriber('my_package_msg', my_msg_setting, callback)
-	rospy.spin()
-
-if __name__=='__main__':
-	listener()
-############################################################
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-4. cpp Publisher의 값을 python Subscriber로 받기 1 ( 기본 msg 파일, 문자 )
-cpp의 Publisher를 string으로 발생시키도록 코드를 수정하고 컴파일한다.
+3. cpp Publisher의 값을 python Subscriber로 받기 1 ( 기본 msg 파일, 숫자 )
 
 cd && cd my_python_test/src/my_python_package/src && vi my_python_msg_subscriber.py
 ############################################################
 #!/usr/bin/env python
 
 import rospy
-from std_msgs.msg import String
+from std_msgs.msg import Int32
 
 def callback(data):
 	rospy.loginfo("I heard %d", data.data)
@@ -193,7 +172,7 @@ def callback(data):
 def listener():
 	rospy.init_node('my_subscriber_node',anonymous=True)
 
-	rospy.Subscriber("my_package_msg", String, callback)
+	rospy.Subscriber("my_package_msg", Int32, callback)
 
 	rospy.spin()
 
@@ -208,6 +187,59 @@ rosrun my_test_package my_msg_publisher # 터미널 2 #
 rosrun my_python_package my_python_msg_subscriber.py # 터미널 3 #
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+4. cpp Publisher의 값을 python Subscriber로 받기 2 ( 사용자 msg 파일, 숫자 )
+int32형 말고 다른 데이터도 추가해보도록한다.
+my_msg_setting.msg의 내용을 아래처럼 수정한다.
+cd ~/my_cpp_test/src/my_cpp_package/msg && vi my_msg_setting.msg
+int32 data
+time stamp
+
+이때 cpp의 자료형을 사용해야하므로 my_msg_setting.msg파일을 my_python_package의 msg폴더로 복사한다.
+
+my_cpp_publisher.cpp의 내용을 수정한다.
+cd ~/my_cpp_test/src/my_cpp_package/src && vi my_cpp_publisher.cpp
+############################################################
+//msg.stamp = ros::Time::now(); 의 주석을 해제한다.
+//ROS_INFO("send msg = %d", ros::Time::now()); 의 주석을 해제한다.
+############################################################
+
+CMakeList.txt에서 아래 부분도 추가해준다.
+cd && cd my_python_test/src/my_python_package && vi CMakeLists.txt
+ add_message_files(
+   FILES
+   my_msg_setting_python.msg
+   my_msg_setting.msg
+ )
+
+cd && cd my_python_test/src/my_python_package/src && vi my_python_msg_subscriber.py
+############################################################
+#!/usr/bin/env python
+
+import rospy
+from my_python_package.msg import my_msg_setting
+
+def callback(data):
+	rospy.loginfo("I heard %d", data.data)
+	rospy.loginfo(data.stamp)
+
+def listener():
+	rospy.init_node('my_subscriber_node',anonymous=True)
+	rospy.Subscriber('my_package_msg', my_msg_setting, callback)
+	rospy.spin()
+
+if __name__=='__main__':
+	listener()
+############################################################
+
+cd ~/my_python_test && catkin_make && cd ~/my_cpp_test && catkin_make
+터미널 모두 종료하고 다시 시작
+roscore # 터미널 1 #
+rosrun my_cpp_package my_cpp_publisher # 터미널 2 #
+rosrun my_python_package my_python_msg_subscriber.py # 터미널 3 #
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 # 참고 1 #
 .py 이므로 그냥 바탕화면의 아무곳에서나 만들어도 roscore와 연동은 된다.
 
@@ -220,4 +252,7 @@ rospy.get_time()
 echo $PYTHONPATH 환경 변수를 추가해서 쉽게 import 할수도 있다.
 export PYTHONPATH="${PYTHONPATH}:/home/nvidia/my_python_test/src/my_python_packag/msg"
 
+# 참고 4 #
+문자를 주고받으려면 cpp의 Publisher를 string으로 발생시키도록 코드를 수정하고
+python의 subscriber를 String으로 받도록 코드를 수정하면 된다.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
