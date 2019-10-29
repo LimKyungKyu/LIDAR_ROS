@@ -1,23 +1,21 @@
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-ROS - Python 패키지 만들기
+1. 직접 Python 패키지와 노드 만들기 1 ( 기본 msg 파일, 문자 )
 https://htsstory.tistory.com/entry/ROS-python%ED%8C%8C%EC%9D%B4%EC%8D%AC-%ED%94%84%EB%A1%9C%EA%B7%B8%EB%9E%98%EB%B0%8D-1-%ED%86%A0%ED%94%BD-%EB%A9%94%EC%8B%9C%EC%A7%80-%ED%86%B5%EC%8B%A0
+1번 예제는 std_msgs.msg의 String 을 사용해서 진행한다.
+2번 예제는 my_msg_setting_python.msg를 사용해보기로 한다. 여기서 미리 my_msg_setting_python.msg는 만들어 놓는다.
 
-패키지 초기화
+
 cd && mkdir -p my_python_test/src && cd my_python_test/src
 catkin_create_pkg my_python_package std_msgs rospy
+cd my_python_package && mkdir msg && cd msg && vi my_msg_setting_python.msg
+int32 num
 
-메세지 형식 작성
-cd my_python_package && mkdir msg && cd msg && vi my_python_msg.msg 하고 아래 내용 입력
-int64 num
-
-package.xml 수정
-cd ~/my_python_test/src/my_python_package && vi package.xml 하고 적절히 비슷한 위치에 아래 내용 입력
+cd ~/my_python_test/src/my_python_package && vi package.xml
 <build_depend>message_generation</build_depend>
 <exec_depend>message_runtime</exec_depend>
 
 Publisher 작성
 cd src && vi my_python_msg_publisher.py
+chatter : 토픽명, my_subscriber_node : 노드명
 ############################################################
 #!/usr/bin/env python
 
@@ -25,11 +23,11 @@ import rospy
 from std_msgs.msg import String
 
 def talker():
-	pub = rospy.Publisher('chatter',String,queue_size=10)
-	rospy.init_node('talker', anonymous = True)
+	pub = rospy.Publisher('python_topic',String,queue_size=10)
+	rospy.init_node('my_publisher_node', anonymous=True)
 	rate = rospy.Rate(1)
 	while not rospy.is_shutdown():
-		hello_str = "hello world %s" % rospy.get_time()
+		hello_str = "hello world"
 		rospy.loginfo(hello_str)
 		pub.publish(hello_str)
 		rate.sleep()
@@ -43,6 +41,7 @@ if __name__=='__main__':
 
 Subscriber 작성
 vi my_python_msg_subscriber.py
+chatter : 토픽명, my_subscriber_node : 노드명
 ############################################################
 #!/usr/bin/env python
 
@@ -50,13 +49,11 @@ import rospy
 from std_msgs.msg import String
 
 def callback(data):
-	rospy.loginfo(rospy.get_caller_id() + "I heard %s", data.data)
+	rospy.loginfo("I heard %s", data.data)
 
 def listener():
-	rospy.init_node('listener',anonymous=True)
-
-	rospy.Subscriber("chatter", String, callback)
-
+	rospy.init_node('my_subscriber_node', anonymous=True)
+	rospy.Subscriber('python_topic', String, callback)
 	rospy.spin()
 
 if __name__=='__main__':
@@ -68,8 +65,159 @@ cd ~/my_python_test && catkin_make
 echo "source ~/my_python_test/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 
-roscore
-rosrun my_python_package my_python_msg_publisher.py
-rosrun my_python_package my_python_msg_subscriber.py
+roscore # 터미널 1 #
+rosrun my_python_package my_python_msg_publisher.py # 터미널 2 #
+rosrun my_python_package my_python_msg_subscriber.py # 터미널 3 #
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+2. 직접 Python 패키지와 노드 만들기 2 ( 사용자 msg 파일, 숫자 )
+2번 예제는 my_msg_setting_python.msg를 사용해보기로 한다.
+cd && cd my_python_test/src/my_python_package && vi CMakeLists.txt
+
+find_package(catkin REQUIRED COMPONENTS
+  rospy
+  std_msgs
+  message_generation
+)
+
+ add_message_files(
+   FILES
+   my_msg_setting_python.msg
+ )
+
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+ )
+
+catkin_package(
+#  INCLUDE_DIRS include
+   LIBRARIES my_python_package
+   CATKIN_DEPENDS rospy std_msgs message_runtime
+#  DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+
+
+cd && cd my_python_test/src/my_python_package/src && vi my_python_msg_publisher.py
+############################################################
+#!/usr/bin/env python
+
+import rospy
+from std_msgs.msg import Int32
+
+def talker():
+	pub = rospy.Publisher('python_topic', Int32, queue_size=10)
+	rospy.init_node('my_publisher_node', anonymous=True)
+	rate = rospy.Rate(1)
+	count = 1
+	while not rospy.is_shutdown():
+		pub.publish(count)
+		count += 1
+		rate.sleep()
+
+if __name__=='__main__':
+	try:
+		talker()
+	except rospy.ROSInterruptException:
+		pass
+############################################################
+cd && cd my_python_test/src/my_python_package/src && vi my_python_msg_subscriber.py
+############################################################
+#!/usr/bin/env python
+
+import rospy
+from my_python_package.msg import my_msg_setting_python
+
+def callback(data):
+	rospy.loginfo("I heard %d", data.num)
+
+def listener():
+	rospy.init_node('my_subscriber_node', anonymous=True)
+	rospy.Subscriber('python_topic', my_msg_setting_python, callback)
+	rospy.spin()
+
+if __name__=='__main__':
+	listener()
+############################################################
+
+cd ~/my_python_test && catkin_make
+터미널 모두 종료하고 다시 시작
+roscore # 터미널 1 #
+rosrun my_python_package my_python_msg_publisher.py # 터미널 2 #
+rosrun my_python_package my_python_msg_subscriber.py # 터미널 3 #
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+3. cpp Publisher의 값을 python Subscriber로 받기 2 ( 사용자 msg 파일, 숫자 )
+이때 cpp의 자료형을 사용해야하므로 msg파일은 cpp것을 msg폴더에 복사해서 붙여넣는다.
+cd && cd my_python_test/src/my_python_package/src && vi my_python_msg_subscriber.py
+############################################################
+#!/usr/bin/env python
+
+import rospy
+from my_python_package.msg import my_msg_setting
+
+def callback(data):
+	rospy.loginfo("I heard %d", data.data)
+
+def listener():
+	rospy.init_node('my_subscriber_node',anonymous=True)
+	rospy.Subscriber('my_package_msg', my_msg_setting, callback)
+	rospy.spin()
+
+if __name__=='__main__':
+	listener()
+############################################################
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+4. cpp Publisher의 값을 python Subscriber로 받기 1 ( 기본 msg 파일, 문자 )
+cpp의 Publisher를 string으로 발생시키도록 코드를 수정하고 컴파일한다.
+
+cd && cd my_python_test/src/my_python_package/src && vi my_python_msg_subscriber.py
+############################################################
+#!/usr/bin/env python
+
+import rospy
+from std_msgs.msg import String
+
+def callback(data):
+	rospy.loginfo("I heard %d", data.data)
+
+def listener():
+	rospy.init_node('my_subscriber_node',anonymous=True)
+
+	rospy.Subscriber("my_package_msg", String, callback)
+
+	rospy.spin()
+
+if __name__=='__main__':
+	listener()
+############################################################
+
+터미널 모두 종료하고 다시 시작
+
+roscore # 터미널 1 #
+rosrun my_test_package my_msg_publisher # 터미널 2 #
+rosrun my_python_package my_python_msg_subscriber.py # 터미널 3 #
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# 참고 1 #
+.py 이므로 그냥 바탕화면의 아무곳에서나 만들어도 roscore와 연동은 된다.
+
+# 참고 2 #
+rospy에서 불러올수 있는 함수
+rospy.get_caller_id()
+rospy.get_time()
+
+# 참고 3 #
+echo $PYTHONPATH 환경 변수를 추가해서 쉽게 import 할수도 있다.
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/my_python_test/src/my_python_packag/msg"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
