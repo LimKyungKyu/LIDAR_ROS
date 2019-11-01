@@ -57,6 +57,10 @@ cd ~/Google_Cartographer && sudo rosdep install --from-paths src --ignore-src --
 	오류시 : #Tag1# 으로 돌아가서 src 폴더 지우고  wstool init src 부터 다시한다.
 catkin_make_isolated --install --use-ninja
 
+source devel_isolated/setup.bash
+echo "source ~/Google_Cartographer/devel_isolated/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+
 참고 : 헤더파일 위치 : cd /opt/ros/melodic/include
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -68,28 +72,28 @@ rosrun turtlesim turtle_teleop_key # 터미널 3 #
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-1. Cartographer 예제
-cd && cd Google_Cartographer && cd src
-git clone https://github.com/msadowski/x2_cartographer.git
+1. Google_Cartographer 예제
+
+cd && mkdir carto_with_yd && cd carto_with_yd && mkdir src && cd src
 git clone https://github.com/YDLIDAR/ydlidar_ros.git
 cd ydlidar_ros && git checkout X2
-
-cd && cd Google_Cartographer && catkin_make_isolated --install --use-ninja
-
-// 카토그래퍼가 설치되어있다면 아래 명령어 생략 // 
-	sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
-
+cd && cd carto_with_yd && catkin_make
 source devel/setup.bash
-
-echo "source ~/Google_Cartographer/devel/setup.bash" >> ~/.bashrc
+echo "source ~/carto_with_yd/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
+cd && sudo vi .bashrc 입력해서 가장 마지막줄에 source ~/carto_with_yd/devel/setup.bash 가 있어야한다.
+터미널 재부팅
+
+cd carto_with_yd/src
+git clone https://github.com/msadowski/x2_cartographer.git
+git submodule update --init
+sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
+터미널 재부팅
 
 roscd ydlidar/startup
 sudo chmod 0777 *
 sudo sh initenv.sh
-
-LIDAR 와 Jetson tx2의 usb를 연결했다가 LIDAR가 돌아가면 빼고 10초뒤에 다시 usb를 연결한다.
-
+LIDAR 와 Jetson tx2의 usb를 연결했다가 LIDAR가 돌아가면 빼고 다시 usb를 연결한다.
 roscore # 터미널 1 #
 roslaunch carto_mapper mapper.launch # 터미널 2 #
 RViz 켜지면 좌측 하단의 ADD클릭, Map 클릭, Topic /map으로 선택
