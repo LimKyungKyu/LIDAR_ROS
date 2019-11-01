@@ -47,8 +47,10 @@ wstool merge -t src https://raw.githubusercontent.com/googlecartographer/cartogr
 wstool update -t src
 src/cartographer/scripts/install_proto3.sh
 sudo rosdep init
-	이미 ROS를 sudo rosdep init 명령어로 실행한적이 있으면 아래와 같은 에러가 출력되므로 무시해도 된다.  
+	Cartographer ROS를 사용해야 하는데 위에서 설치하느라 sudo rosdep init했기때문에 아래와 같은 에러가 나온다.
 	The command ‘sudo rosdep init’ will print an error if you have already executed it since installing ROS. This error can be ignored.
+	해당 위치로 이동해서 파일을 삭제하고 다시 sudo rosdep init한다.
+	sudo rm -rf /etc/ros/rosdep/sources.list.d/20-default.list && sudo rosdep init
 rosdep update
 	오류시 : sudo rosdep fix-permissions 입력하고 다시 rosdep update
 cd ~/Google_Cartographer && sudo rosdep install --from-paths src --ignore-src --rosdistro=${ROS_DISTRO} -y
@@ -66,7 +68,34 @@ rosrun turtlesim turtle_teleop_key # 터미널 3 #
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-1-1. YDLIDAR에서 제공하는 예제 1
+1. Cartographer 예제
+cd && cd Google_Cartographer && cd src
+git clone https://github.com/msadowski/x2_cartographer.git
+git clone https://github.com/YDLIDAR/ydlidar_ros.git
+cd ydlidar_ros && git checkout X2
+
+cd && cd Google_Cartographer && catkin_make
+
+sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
+source devel/setup.bash
+
+echo "source ~/Google_Cartographer/devel/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+
+roscd ydlidar/startup
+sudo chmod 0777 *
+sudo sh initenv.sh
+
+LIDAR 와 Jetson tx2의 usb를 연결했다가 LIDAR가 돌아가면 빼고 10초뒤에 다시 usb를 연결한다.
+
+roscore # 터미널 1 #
+roslaunch carto_mapper mapper.launch # 터미널 2 #
+RViz 켜지면 좌측 하단의 ADD클릭, Map 클릭, Topic /map으로 선택
+더 필요한 버튼은 ADD 해서 추가한다. 일반적으로 orientation도 켜둔다.
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+2-1. YDLIDAR에서 제공하는 예제 1
 #터미널에서 측정 값 출력하기#
 YDLIDAR X2
 공식홈페이지 : http://www.ydlidar.com/download
@@ -113,7 +142,7 @@ roscore # 터미널 1 #
 roslaunch ydlidar lidar.launch # 터미널 2 #
 rosrun ydlidar ydlidar_client # 터미널 3 #
 
-1-2. rviz로 시각화
+2-2. rviz로 시각화
 # 모든 터미널 종료한다. #
 # .launch 파일은 여러개의 노드를 실행시켜준다. #
 roslaunch ydlidar lidar_view.launch 
@@ -127,29 +156,6 @@ rosrun : ROS의 기본적인 실행 명령어, 패키지에서 하나의 노드�
 roslaunch : 한번에 복수개의 노드를 실행하는 명령어
 
 참고 : lidar_node와 lidar_client의 소스코드 위치 ~/Melodic/src/ydlidar_ros/src
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-2. Cartographer 예제 1
-# 비슷한 예제 # 
-cd && mkdir Cartographer_test && cd Cartographer_test && mkdir src && cd src
-git clone https://github.com/msadowski/x2_cartographer.git
-git clone https://github.com/YDLIDAR/ydlidar_ros.git
-cd ydlidar_ros && git checkout X2
-cd && cd Cartographer_test  && catkin_make
-sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
-source devel/setup.bash
-echo "source ~/Cartographer_test/devel/setup.bash" >> ~/.bashrc
-source ~/.bashrc
-roscd ydlidar/startup
-sudo chmod 0777 *
-sudo sh initenv.sh
-
-LIDAR 와 Jetson tx2의 usb를 연결한다.
-roscore # 터미널 1 #
-roslaunch carto_mapper mapper.launch # 터미널 2 #
-RViz 켜지면 좌측 하단의 ADD클릭, Map 클릭, Topic /map으로 선택
-더 필요한 버튼은 ADD 해서 추가한다. 일반적으로 orientation도 켜둔다.
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
