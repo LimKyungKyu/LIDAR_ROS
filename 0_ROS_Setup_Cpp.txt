@@ -111,13 +111,9 @@ cd && cd carto_with_yd && catkin_make
 ydlidar_node.cpp 내용
 	if(degree > -180 && degree< 180) // -180도 ~ 180도 안에 있는 정보를 표시해준다.
 
-
-
-
-
-
-
-
+// 여기서 정보 확인
+https://google-cartographer-ros.readthedocs.io/en/latest/configuration.html
+// tf의 base, laser 값 찾아내기. 
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
