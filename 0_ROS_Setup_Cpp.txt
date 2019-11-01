@@ -59,15 +59,14 @@ catkin_make_isolated --install --use-ninja
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-터틀봇 예제 1
+0. 설치 확인을 위한 터틀심 예제
 roscore # 터미널 1 #
 rosrun turtlesim turtlesim_node # 터미널 2 #
 rosrun turtlesim turtle_teleop_key # 터미널 3 #
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-예제
-1. YDLIDAR에서 제공하는 예제 1
+1-1. YDLIDAR에서 제공하는 예제 1
 #터미널에서 측정 값 출력하기#
 YDLIDAR X2
 공식홈페이지 : http://www.ydlidar.com/download
@@ -110,11 +109,14 @@ sudo chmod 0777 *
 sudo sh initenv.sh
 
 ## 실행 시작 ##
-
 roscore # 터미널 1 #
 roslaunch ydlidar lidar.launch # 터미널 2 #
 rosrun ydlidar ydlidar_client # 터미널 3 #
-roslaunch ydlidar lidar_view.launch # 터미널 4 (rviz로 시각화) #
+
+1-2. rviz로 시각화
+# 모든 터미널 종료한다. #
+# .launch 파일은 여러개의 노드를 실행시켜준다. #
+roslaunch ydlidar lidar_view.launch 
 
 ## 사용된 명령어 정리 ##
 roscore : ROS Master를 실행하는 명령어. 같은 네트워크라면 다른 컴퓨터에서 실행가능.
@@ -128,16 +130,16 @@ roslaunch : 한번에 복수개의 노드를 실행하는 명령어
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-2. YDLIDAR에서 제공하는 예제 2
+2. Cartographer 예제 1
 # 비슷한 예제 # 
-cd && mkdir test && cd test && mkdir src && cd src
+cd && mkdir Cartographer_test && cd Cartographer_test && mkdir src && cd src
 git clone https://github.com/msadowski/x2_cartographer.git
 git clone https://github.com/YDLIDAR/ydlidar_ros.git
 cd ydlidar_ros && git checkout X2
-cd && cd test  && catkin_make
+cd && cd Cartographer_test  && catkin_make
 sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
 source devel/setup.bash
-echo "source ~/test/devel/setup.bash" >> ~/.bashrc
+echo "source ~/Cartographer_test/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 roscd ydlidar/startup
 sudo chmod 0777 *
@@ -151,7 +153,7 @@ RViz 켜지면 좌측 하단의 ADD클릭, Map 클릭, Topic /map으로 선택
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-3. Google에서 저장해놓은 카토그래퍼 예제 불러오기
+3. Google에서 녹화해놓은 카토그래퍼 예제 불러오기
 source install_isolated/setup.bash
 wget -P ~/Downloads https://storage.googleapis.com/cartographer-public-data/bags/backpack_2d/cartographer_paper_deutsches_museum.bag
 roslaunch cartographer_ros demo_backpack_2d.launch bag_filename:=${HOME}/Downloads/cartographer_paper_deutsches_museum.bag
