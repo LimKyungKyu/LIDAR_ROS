@@ -87,13 +87,15 @@ cd && sudo vi .bashrc 입력해서 가장 마지막줄에 source ~/carto_with_yd
 cd carto_with_yd/src
 git clone https://github.com/msadowski/x2_cartographer.git
 git submodule update --init
-sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
+	// 이 명령어는 안해도 된다.
+	sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
 터미널 재부팅
 
 roscd ydlidar/startup
 sudo chmod 0777 *
 sudo sh initenv.sh
 LIDAR 와 Jetson tx2의 usb를 연결했다가 LIDAR가 돌아가면 빼고 다시 usb를 연결한다.
+
 roscore # 터미널 1 #
 roslaunch carto_mapper mapper.launch # 터미널 2 #
 RViz 켜지면 좌측 하단의 ADD클릭, Map 클릭, Topic /map으로 선택
