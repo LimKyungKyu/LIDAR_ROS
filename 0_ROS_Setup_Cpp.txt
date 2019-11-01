@@ -74,9 +74,11 @@ git clone https://github.com/msadowski/x2_cartographer.git
 git clone https://github.com/YDLIDAR/ydlidar_ros.git
 cd ydlidar_ros && git checkout X2
 
-cd && cd Google_Cartographer && catkin_make
+cd && cd Google_Cartographer && catkin_make_isolated --install --use-ninja
 
-sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
+// 카토그래퍼가 설치되어있다면 아래 명령어 생략 // 
+	sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
+
 source devel/setup.bash
 
 echo "source ~/Google_Cartographer/devel/setup.bash" >> ~/.bashrc
