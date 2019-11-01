@@ -84,11 +84,12 @@ source ~/.bashrc
 cd && sudo vi .bashrc 입력해서 가장 마지막줄에 source ~/carto_with_yd/devel/setup.bash 가 있어야한다.
 터미널 재부팅
 
-cd carto_with_yd/src
+cd && cd carto_with_yd/src
 git clone https://github.com/msadowski/x2_cartographer.git
 git submodule update --init
-	// 이 명령어는 안해도 된다.
-	sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
+// 모든 의존성 패키지 포함시키는 명령어이다.
+// 현재 src안에 cartographer가 없어서 다른곳에 깔려있으니까 활용하려고 아래 명령어를 입력한다.
+sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
 터미널 재부팅
 
 roscd ydlidar/startup
@@ -96,10 +97,31 @@ sudo chmod 0777 *
 sudo sh initenv.sh
 LIDAR 와 Jetson tx2의 usb를 연결했다가 LIDAR가 돌아가면 빼고 다시 usb를 연결한다.
 
-roscore # 터미널 1 #
-roslaunch carto_mapper mapper.launch # 터미널 2 #
+roslaunch carto_mapper mapper.launch # 터미널 1 #
+rosrun ydlidar ydlidar_client # 터미널 2 #
 RViz 켜지면 좌측 하단의 ADD클릭, Map 클릭, Topic /map으로 선택
-더 필요한 버튼은 ADD 해서 추가한다. 일반적으로 orientation도 켜둔다.
+더 필요한 버튼은 ADD 해서 추가한다.
+
+x2.lua의 설정은 수정후 catkin_make 필요없다.
+~/carto_with_yd/src/x2_cartographer/carto_mapper/config
+x2.lua 내용
+TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 360 // 이 갯수를 적당히 조정해야
+  num_subdivisions_per_laser_scan = 360, // 이 값을 늘렸을때 RViz로 볼수있다.
+
+ydlidar_client.cpp, ydlidar_node.cpp의 설정은 수정 후 catkin_make 필요하다.
+cd && cd carto_with_yd && catkin_make
+~/carto_with_yd/src/ydlidar_ros/src
+ydlidar_node.cpp 내용
+	if(degree > -180 && degree< 180) // 터미널에서 보여줄 정보 -180 ~ 180
+
+
+
+
+
+
+
+
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
