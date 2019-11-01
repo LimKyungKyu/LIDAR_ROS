@@ -104,15 +104,12 @@ RViz 켜지면 좌측 하단의 ADD클릭, Map 클릭, Topic /map으로 선택
 
 x2.lua의 설정은 수정후 catkin_make 필요없다.
 ~/carto_with_yd/src/x2_cartographer/carto_mapper/config
-x2.lua 내용
-TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 360 // 이 갯수를 적당히 조정해야
-  num_subdivisions_per_laser_scan = 360, // 이 값을 늘렸을때 RViz로 볼수있다.
 
 ydlidar_client.cpp, ydlidar_node.cpp의 설정은 수정 후 catkin_make 필요하다.
 cd && cd carto_with_yd && catkin_make
 ~/carto_with_yd/src/ydlidar_ros/src
 ydlidar_node.cpp 내용
-	if(degree > -180 && degree< 180) // 터미널에서 보여줄 정보 -180 ~ 180
+	if(degree > -180 && degree< 180) // -180도 ~ 180도 안에 있는 정보를 표시해준다.
 
 
 
