@@ -1,0 +1,472 @@
+############################################################################################################################
+############################################# 1. 터틀심을 이용한 tf 예제 따라하기 #############################################
+
+cd && mkdir -p test_tf/src && cd test_tf/src && catkin_init_workspace
+catkin_create_pkg learning_tf tf roscpp rospy turtlesim // tf, roscpp, rospy, turtlesim의 의존성을 포함시켜 패키지를 생성한다.
+cd && cd test_tf && catkin_make && echo "source ~/test_tf/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+cd ~/test_tf/src/learning_tf/src && vi turtle_tf_broadcaster.cpp
+# turtle_tf_broadcaster.cpp #
+// https://raw.githubusercontent.com/ros/geometry_tutorials/hydro-devel/turtle_tf/src/turtle_tf_broadcaster.cpp // 
+// 코드 시작 //
+#include <ros/ros.h>
+#include <tf/transform_broadcaster.h>
+#include <turtlesim/Pose.h>
+
+std::string turtle_name;
+
+void poseCallback(const turtlesim::PoseConstPtr& msg)
+{
+  static tf::TransformBroadcaster br;
+
+  tf::Transform transform;
+  transform.setOrigin( tf::Vector3(msg->x, msg->y, 0.0) );
+
+  tf::Quaternion q;
+  q.setRPY(0, 0, msg->theta);
+  transform.setRotation(q);
+
+  br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", turtle_name));
+}
+
+int main(int argc, char** argv){
+  ros::init(argc, argv, "my_tf_broadcaster");
+  if (argc != 2){ROS_ERROR("need turtle name as argument"); return -1;};
+  turtle_name = argv[1];
+
+  ros::NodeHandle node;
+  ros::Subscriber sub = node.subscribe(turtle_name+"/pose", 10, &poseCallback);
+
+  ros::spin();
+  return 0;
+};
+// 코드 끝 //
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+cd ~/test_tf/src/learning_tf && vi CMakeLists.txt
+맨 아랫줄에 아래 내용 추가
+add_executable(turtle_tf_broadcaster src/turtle_tf_broadcaster.cpp)
+target_link_libraries(turtle_tf_broadcaster ${catkin_LIBRARIES})
+
+
+cd ~/test_tf && catkin_make
+cd ~/test_tf/devel/lib/learning_tf && vi start_demo.launch
+// 코드 시작 //
+  <launch>
+
+    <!-- Turtlesim Node-->
+    <node pkg="turtlesim" type="turtlesim_node" name="sim"/>
+    <node pkg="turtlesim" type="turtle_teleop_key" name="teleop" output="screen"/>
+
+    <!-- Axes -->
+    <param name="scale_linear" value="2" type="double"/>
+    <param name="scale_angular" value="2" type="double"/>
+
+    <node pkg="learning_tf" type="turtle_tf_broadcaster"
+          args="/turtle1" name="turtle1_tf_broadcaster" />
+    <node pkg="learning_tf" type="turtle_tf_broadcaster"
+          args="/turtle2" name="turtle2_tf_broadcaster" />
+
+  </launch>
+// 코드 끝 //
+
+터미널 모두 닫고 새로 킨다.
+roslaunch learning_tf start_demo.launch // 터틀봇이 한개만 표시된다.
+rosrun tf tf_echo /world /turtle1 // turtle1의 위치 정보와 각도가 표시된다.
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+cd ~/test_tf/src/learning_tf/src && vi turtle_tf_listener.cpp
+# turtle_tf_listener.cpp #
+https://raw.githubusercontent.com/ros/geometry_tutorials/groovy-devel/turtle_tf/src/turtle_tf_listener.cpp
+// 코드시작 //
+#include <ros/ros.h>
+#include <tf/transform_listener.h>
+#include <geometry_msgs/Twist.h>
+#include <turtlesim/Spawn.h>
+
+int main(int argc, char** argv){
+  ros::init(argc, argv, "my_tf_listener");
+
+  ros::NodeHandle node; // ROS 시스템과 통신을 위한 노드 핸들 선언
+
+  ros::service::waitForService("spawn");
+  ros::ServiceClient add_turtle = node.serviceClient<turtlesim::Spawn>("spawn");
+  turtlesim::Spawn srv;
+  add_turtle.call(srv);
+
+  // 토픽명은 "turtle2/cmd_vel" 이며, Publisher 큐(queue) 사이즈를 10개로 설정한다는 것이다.
+  ros::Publisher turtle_vel = node.advertise<geometry_msgs::Twist>("turtle2/cmd_vel", 10);
+
+  tf::TransformListener listener; // TransformListener 오브젝트를 listener라는 이름으로 선언
+
+  ros::Rate rate(10.0);
+  while (node.ok())
+  {
+    tf::StampedTransform transform;
+    try
+    {
+      listener.lookupTransform("/turtle2", "/turtle1",
+                               ros::Time(0), transform);
+    }
+    catch (tf::TransformException &ex)
+    {
+      ROS_ERROR("%s",ex.what());
+      ros::Duration(1.0).sleep();
+      continue;
+    }
+
+    geometry_msgs::Twist vel_msg;
+    vel_msg.angular.z = 4.0 * atan2(transform.getOrigin().y(),
+                                    transform.getOrigin().x());
+    vel_msg.linear.x = 0.5 * sqrt(pow(transform.getOrigin().x(), 2) +
+                                  pow(transform.getOrigin().y(), 2));
+
+    turtle_vel.publish(vel_msg);
+
+    rate.sleep();
+  }
+  return 0;
+};
+// 코드 끝 //
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+cd ~/test_tf/src/learning_tf && vi CMakeLists.txt
+맨 아랫줄에 아까 추가한 코드에 이어서 내용 추가
+add_executable(turtle_tf_broadcaster src/turtle_tf_broadcaster.cpp) // 원래 있던 내용
+add_executable(turtle_tf_listener src/turtle_tf_listener.cpp)
+target_link_libraries(turtle_tf_broadcaster ${catkin_LIBRARIES}) // 원래 있던 내용
+target_link_libraries(turtle_tf_listener ${catkin_LIBRARIES})
+
+cd ~/test_tf && catkin_make
+cd ~/test_tf/devel/lib/learning_tf && vi start_demo.launch
+<launch> </launch> 사이에 아래 내용 추가
+    <node pkg="learning_tf" type="turtle_tf_listener"
+          name="listener" />
+
+roslaunch learning_tf start_demo.launch
+아래와 같은 오류가 발생할 수 있다.
+    [ERROR] 1253915565.300572000: Frame id /turtle2 does not exist! When trying to transform between /turtle1 and /turtle2.
+    [ERROR] 1253915565.401172000: Frame id /turtle2 does not exist! When trying to transform between /turtle1 and /turtle2.
+이유는 다음과 같다.
+This happens because our listener is trying to compute the transform before messages about turtle 2 have been received
+because it takes a little time to spawn in turtlesim and start broadcasting a tf frame. 
+
+rosrun tf tf_echo /world /turtle1 // 위치 정보와 각도가 표시된다.
+rosrun tf tf_echo /world /turtle2 // 위치 정보와 각도가 표시된다.
+
+
+
+##########################################################################################################################
+############################################# 2. RViz에서 데이터 좌표 수집하기 #############################################
+
+echo "source ~/carto_with_yd/devel/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+roslaunch carto_mapper mapper.launch
+rosrun ydlidar ydlidar_client
+
+Frame odom exists with parent map.
+Frame base_footprint exists with parent odom.
+Frame laser_frame exists with parent base_footprint.
+
+rosrun tf tf_echo /odom /base_footprint
+// 전원이 켜진 순간 base_footprint와 odom이 0,0으로 일치한다.
+// 움직이면 base_footprint가 이동한다.
+// 빨간색이 x, 초록색이 y, 파란색이 z
+// 참고자료 http://docs.ros.org/melodic/api/tf/html/c++/tf__echo_8cpp_source.html
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#include "ros/ros.h"
+#include "tf/transform_listener.h"
+#define _USE_MATH_DEFINES
+#include <cstdio>
+
+class my_tf_out
+{
+public:
+	tf::TransformListener tfl;
+
+	my_tf_out()
+	{
+	}
+
+	~my_tf_out()
+	{
+	}
+
+private:
+};
+
+int main(int argc, char ** argv)
+{
+	ros::init(argc, argv, "my_tf_test", ros::init_options::AnonymousName);
+	ros::NodeHandle nh;
+	ros::Rate loop_rate(1);
+
+	my_tf_out my_tf_out;
+	double my_RAD2DEG = 180.0/M_PI;
+
+	// odom은 0,0이고 base_footprint까지의 거리가 부호를 가지며 표시된다.
+	// 아래는 직접 필요한 Frame을 넣어준다.
+	std::string start = std::string("/odom"); 
+	std::string move = std::string("/base_footprint");
+
+	// 첫번째 전송이 완료될때까지 1초동안 기다립니다.
+	my_tf_out.tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
+
+	while(nh.ok())
+	{
+		tf::StampedTransform my_test_transform;
+		my_tf_out.tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
+
+		double yaw, pitch, roll;
+		my_test_transform.getBasis().getRPY(roll, pitch, yaw);
+		tf::Quaternion q = my_test_transform.getRotation();
+		tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
+
+		std::cout<<"시작 점으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
+		std::cout<<"	("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
+		std::cout<<"축 회전 각 [degree] (yaw, pitch, roll)"<<std::endl;
+		std::cout<<"	("<<roll*my_RAD2DEG<<", "<<pitch*my_RAD2DEG<<", "<<yaw*my_RAD2DEG<<")"<< std::endl;
+		loop_rate.sleep();
+	}
+
+	return 0;
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+cd ~/carto_with_yd/src/my_tf_test && vi CMakeLists.txt
+맨아래에 아래 코드 추가
+add_executable(my_tf_test src/my_tf_test.cpp)
+target_link_libraries(my_tf_test ${catkin_LIBRARIES})
+
+cd ~/carto_with_yd && catkin_make
+roslaunch carto_mapper mapper.launch
+rosrun my_tf_test my_tf_test
+
+##########################################################################################################################
+############################################# 3. Laserscan 값으로 맵 그리기 ###############################################
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#include "ros/ros.h"
+#include "sensor_msgs/LaserScan.h"
+#define RAD2DEG(x) ((x)*180./M_PI)
+#include <math.h>
+#include <opencv2/opencv.hpp>
+using namespace cv;
+
+// 확대 비율을 여기서 정한다.
+#define enlarge 30
+
+Mat my_map(20*enlarge, 20*enlarge, CV_64F, Scalar(0));
+
+void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
+{
+	int count = scan->scan_time / scan->time_increment;
+	double my_array[1000][2]; // count값의 최대치를 대략적으로 찍어보고 1000개에서 숫자를 조정한다.
+
+	int m_a_count = 0;
+	for(int i = 0; i < count; i++)
+	{
+		float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+		if(degree > -180 && degree< 180)
+		{
+			if(isinf(scan->ranges[i])||scan->ranges[i]<0.1||scan->ranges[i]>10)
+			{
+			}
+			else
+			{
+				printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
+				my_array[m_a_count][0] = degree;
+				my_array[m_a_count][1] = scan->ranges[i];
+				++m_a_count; 
+			}
+		}
+	}
+	
+	Point2d my_center(my_map.size().width/2, my_map.size().height/2); // Tag1 //
+	Point2d detection;
+	for(int i = 0; i < m_a_count; i++)
+	{
+		std::cout<<"angle : "<<my_array[i][0]<<", distance : "<< my_array[i][1] << std::endl;
+		detection.x =  my_center.x + my_array[i][1]*cos(my_array[i][0]*CV_PI/180.0)*enlarge;
+		detection.y =  my_center.y + -my_array[i][1]*sin(my_array[i][0]*CV_PI/180.0)*enlarge;
+		circle(my_map, detection, 3, Scalar(0), 1);
+		line(my_map, my_center, detection, Scalar(255), 2);
+	}
+	moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+	namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+	imshow("my_map_window", my_map);
+	waitKey(1);
+	std::cout<< count << std::endl;
+}
+
+int main(int argc, char **argv)
+{
+	ros::init(argc, argv, "ydlidar_client");
+	ros::NodeHandle n;
+	ros::Subscriber sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1000, scanCallback);
+	ros::spin();
+	return 0;
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+cmakelist.txt 수정
+find_package(OpenCV REQUIRED) // find_package중 맨 위에
+target_link_libraries(ydlidar_client
+   ${catkin_LIBRARIES} 
+   ${OpenCV_LIBS}		// 해당되는파일 (ydlidar_client.cpp)에 추가해준다.
+ )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##########################################################################################################################
+############################################# 4. 맵(회전) ###############################################
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#include "ros/ros.h"
+#include "sensor_msgs/LaserScan.h"
+#define RAD2DEG(x) ((x)*180./M_PI)
+#include <math.h>
+#include <opencv2/opencv.hpp>
+#include "hough.hpp"
+
+using namespace cv;
+
+// ?? ??? ??? ???.
+#define enlarge 30
+
+Mat my_map(20*enlarge, 20*enlarge, CV_8UC1, Scalar(0));
+int re_map=0;
+
+void max_object(Mat img, Rect &rect ) 
+{
+	vector<vector<Point>> contours;
+	findContours(img.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);	// ¿Ü°û\u0152± °ËÃâ
+	
+	int max_area = 0 ;
+	for (int i = 0; i < (int)contours.size(); i++)	// °¡Àå Å« ¿µ¿ª °¡Á®¿À±â
+	{
+		Rect r = boundingRect(contours[i]);			// ¿Ü°û\u0152± ¿µ¿ª Æ÷ÇÔ »ç°¢Çü
+		if (max_area < r.area()) {
+			max_area = r.area();
+			rect = r;
+		}
+	}
+	rect = rect - Point(10, 10) + Size(20, 20);
+}
+
+void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
+{
+	int count = scan->scan_time / scan->time_increment;
+	double my_array[1000][2]; // count?? ???? ????? ???? 1000??? ??? ????.
+
+	int m_a_count = 0;
+	for(int i = 0; i < count; i++)
+	{
+		float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+		if(degree > -180 && degree< 180)
+		{
+			if(isinf(scan->ranges[i])||scan->ranges[i]<0.1||scan->ranges[i]>10)
+			{
+			}
+			else
+			{
+				printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
+				my_array[m_a_count][0] = degree;
+				my_array[m_a_count][1] = scan->ranges[i];
+				++m_a_count; 
+			}
+		}
+	}
+
+	if(re_map<50)
+	{
+	}
+	else
+	{
+		std::cout<< "hello" << std::endl;
+		Mat re_create_map(20*enlarge, 20*enlarge, CV_8UC1, Scalar(0));
+		std::cout<< "hello2" << std::endl;
+		my_map = re_create_map;
+		std::cout<< "hello3" << std::endl;
+		re_map = 0;
+	}
+	
+	Point2d my_center(my_map.size().width/2, my_map.size().height/2); // Tag1 //
+	Point2d detection;
+	for(int i = 0; i < m_a_count; i++)
+	{
+		std::cout<<"angle : "<<my_array[i][0]<<", distance : "<< my_array[i][1] << std::endl;
+		detection.x =  my_center.x + my_array[i][1]*cos(my_array[i][0]*CV_PI/180.0)*enlarge*5;
+		detection.y =  my_center.y + -my_array[i][1]*sin(my_array[i][0]*CV_PI/180.0)*enlarge*5;
+		circle(my_map, detection, 3, Scalar(0), 1);
+		line(my_map, my_center, detection, Scalar(255), 3);
+	}
+	++re_map;
+	moveWindow("my_map_window", 100, 100); // (+x -y)
+	namedWindow("my_map_window", WINDOW_AUTOSIZE);
+	imshow("my_map_window", my_map);
+
+
+	Rect rect;
+	Mat gray, canny, morph, th_gray, canny_line, dst;
+	double rho = 1, theta = CV_PI / 180;	
+	vector<Vec2f> lines;	
+
+	Mat image = my_map;
+	CV_Assert(image.data);
+
+	//cvtColor(image, gray, CV_BGR2GRAY);
+	threshold(image, th_gray, 240, 255, THRESH_BINARY);
+	erode(th_gray, morph, Mat(), Point(-1, -1), 2);
+
+	max_object(morph, rect);
+	rectangle(morph, rect, Scalar(100), 2);	
+
+	Canny(th_gray(rect), canny, 40, 100);
+	houghLines(canny, lines, rho, theta, 50);
+	draw_houghLines(canny, canny_line, lines, 1);
+
+	double angle = (CV_PI - lines[0][1]) * 180 / CV_PI  ;
+	Point  center = image.size() / 2;
+	Mat rot_map = getRotationMatrix2D(center, -angle, 1);
+	
+	warpAffine(image, dst, rot_map, image.size(), INTER_LINEAR);
+	imshow("morph", morph);
+	imshow("image", image);
+	imshow("line", canny_line);
+	imshow("dst", dst);
+	waitKey(1);
+	std::cout<< count << std::endl;
+}
+
+int main(int argc, char **argv)
+{
+	ros::init(argc, argv, "ydlidar_client");
+	ros::NodeHandle n;
+	ros::Subscriber sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1000, scanCallback);
+	moveWindow("morph", 500, 100); 
+	moveWindow("image", 500, 100); 
+	moveWindow("line", 500, 100); 
+	moveWindow("dst", 500, 100); 
+	ros::spin();
+	return 0;
+}
+
+
+
+
+
+
