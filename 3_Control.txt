@@ -1,0 +1,162 @@
+// 1. waveshare 젯봇에서 분리 시키기 //
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+https://github.com/waveshare/jetbot.git
+
+cd && mkdir temp_jetbot && cd temp_jetbot
+git clone https://github.com/waveshare/jetbot.git
+
+cd && mkdir -p my_control_test/src && cd my_control_test/src
+catkin_create_pkg my_control std_msgs roscpp rospy tf
+cd ~/my_control_test && catkin_make
+
+cd && cd my_control_test/src/my_control/include && vi motor.py
+###############################################################################################################################
+import atexit
+from Adafruit_MotorHAT import Adafruit_MotorHAT
+import traitlets
+from traitlets.config.configurable import Configurable
+
+
+class Motor(Configurable):
+
+    value = traitlets.Float()
+    
+    # config
+    alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    beta = traitlets.Float(default_value=0.0).tag(config=True)
+
+    def __init__(self, driver, channel, *args, **kwargs):
+        super(Motor, self).__init__(*args, **kwargs)  # initializes traitlets
+
+        self._driver = driver
+        self._motor = self._driver.getMotor(channel)
+        atexit.register(self._release)
+        
+    @traitlets.observe('value')
+    def _observe_value(self, change):
+        self._write_value(change['new'])
+
+    def _write_value(self, value):
+        """Sets motor value between [-1, 1]"""
+        mapped_value = int(255.0 * (self.alpha * value + self.beta))
+        speed = min(max(abs(mapped_value), 0), 255)
+        self._motor.setSpeed(speed)
+        if mapped_value < 0:
+            self._motor.run(Adafruit_MotorHAT.FORWARD)
+        else:
+            self._motor.run(Adafruit_MotorHAT.BACKWARD)
+
+    def _release(self):
+        """Stops motor by releasing control"""
+        self._motor.run(Adafruit_MotorHAT.RELEASE)
+
+###############################################################################################################################
+
+
+cd && cd my_control_test/src/my_control/include && vi robot.py
+###############################################################################################################################
+import time
+import traitlets
+from traitlets.config.configurable import SingletonConfigurable
+from Adafruit_MotorHAT import Adafruit_MotorHAT
+from motor import Motor
+
+
+class Robot(SingletonConfigurable):
+    
+    left_motor = traitlets.Instance(Motor)
+    right_motor = traitlets.Instance(Motor)
+
+    # config
+    i2c_bus = traitlets.Integer(default_value=1).tag(config=True)
+    left_motor_channel = traitlets.Integer(default_value=1).tag(config=True)
+    left_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    right_motor_channel = traitlets.Integer(default_value=2).tag(config=True)
+    right_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    
+    def __init__(self, *args, **kwargs):
+        super(Robot, self).__init__(*args, **kwargs)
+        self.motor_driver = Adafruit_MotorHAT(i2c_bus=self.i2c_bus)
+        self.left_motor = Motor(self.motor_driver, channel=self.left_motor_channel, alpha=self.left_motor_alpha)
+        self.right_motor = Motor(self.motor_driver, channel=self.right_motor_channel, alpha=self.right_motor_alpha)
+        
+    def set_motors(self, left_speed, right_speed):
+        self.left_motor.value = left_speed
+        self.right_motor.value = right_speed
+        
+    def forward(self, speed=1.0, duration=None):
+        self.left_motor.value = speed
+        self.right_motor.value = speed
+
+    def backward(self, speed=1.0):
+        self.left_motor.value = -speed
+        self.right_motor.value = -speed
+
+    def left(self, speed=1.0):
+        self.left_motor.value = -speed
+        self.right_motor.value = speed
+
+    def right(self, speed=1.0):
+        self.left_motor.value = speed
+        self.right_motor.value = -speed
+
+    def stop(self):
+        self.left_motor.value = 0
+        self.right_motor.value = 0
+
+###############################################################################################################################
+
+cd && cd my_control_test/src/my_control/src && vi move.py
+###############################################################################################################################
+#!/usr/bin/env python3
+
+from robot import Robot
+import time # time.sleep(0.5) 을 사용하기 위한 모듈 time을 import한다.
+
+# 방향 조절
+# robot.left
+# robot.right
+# robot.forward
+# robot.backwards
+
+robot = Robot()
+robot.left(speed=0.3) # 왼쪽 모터 최대 속도의 30%로 지정
+robot.left(0.3) # 위와 같은 표현이다.
+time.sleep(0.5) # 0.5초 동안 유지한다.
+robot.stop()
+
+
+# 회전 조절
+robot.set_motors(0.3, 0.6) # 좌 회전
+time.sleep(1.0)
+robot.stop()
+
+# 같은 표현
+robot.left_motor.value = 0.3
+robot.right_motor.value = 0.6
+time.sleep(1.0)
+robot.left_motor.value = 0.0
+robot.right_motor.value = 0.0
+###############################################################################################################################
+
+cd && cd my_control_test/src/my_control/src && chmod +x move.py
+cd && cd my_control_test/src/my_control && vi CMakeLists.txt
+catkin_package(
+#  INCLUDE_DIRS include
+   LIBRARIES my_control
+   CATKIN_DEPENDS rospy std_msgs message_runtime
+#  DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+
+cd ~/my_control_test && catkin_make
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/my_control_test/src/my_control/include"
+echo "source ~/my_control_test/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+	오류시 sudo apt-get install python3-pip
+	python3 -m pip install traitlets
+	python3 -m pip install Adafruit_MotorHAT
+
