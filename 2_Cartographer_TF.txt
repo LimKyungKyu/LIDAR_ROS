@@ -329,11 +329,16 @@ vi ~/carto_with_yd/src/my_tf_test/src/my_tf_test_map.cpp
 
 using namespace cv;
 
-// 초기 맵 생성
-// 중심 (0,0) (가로10, 세로10)
-// enlarge 만큼 확대 시킨다. ( 30배 )
+// 초기 맵 세팅
+// 중심 (0,0) (가로10, 세로10) (최대측정거리 10)
+// enlarge : 확대 시킨다. ( 30배 )
+// padding : 확대 후 매트릭스의 여백 설정 ( 10 입력하면 상하좌우 10씩 늘어난다. )
+// 1픽셀 = 1m, 30배 확대햇으면 30픽셀 = 1m 이다.
+
 #define enlarge 30
-Mat my_map(20*enlarge, 20*enlarge, CV_64FC3, Scalar(0));
+#define padding 0
+Mat my_map(20*enlarge+(padding*2), 20*enlarge+(padding*2), CV_64FC3, Scalar(0));
+Mat re_create_map(20*enlarge+(padding*2), 20*enlarge+(padding*2), CV_64FC3, Scalar(0));
 Mat temp_my_map;
 
 
@@ -358,7 +363,6 @@ Point2d point_rotation(Point2d a, double b)
 	temp_a.y = a.x*sin(b) + a.y*cos(b);
 
 	std::cout<<temp_a.x<<" "<<temp_a.y<< std::endl;
-	sleep(1);
 	return temp_a;
 }
 
@@ -388,19 +392,18 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 	std::cout<<"	("<<roll*180./M_PI<<", "<<pitch*180./M_PI<<", "<<yaw*180./M_PI<<")"<< std::endl;
 	std::cout<<roll<<" "<<pitch<<" "<<yaw<<std::endl;
 
-// 맵 데이터 획득은 50번 마다 갱신 //
+	// 맵 데이터 획득은 50번 마다 갱신 //
 	if(re_map<50)
 	{
 	}
 	else
 	{
-		Mat re_create_map(20*enlarge, 20*enlarge, CV_64FC3, Scalar(0));
-		my_map = re_create_map;
+		my_map = re_create_map.clone();
 		re_map = 0;
 	}
 
 
-// 맵 데이터 획득부분//
+	// 맵 데이터 획득부분//
 	int count = scan->scan_time / scan->time_increment;
 
 	double my_array[1000][2];
@@ -413,7 +416,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 		float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
 		if(degree > -180 && degree< 180)
 		{
-			if(isinf(scan->ranges[i])||scan->ranges[i]<0.1||scan->ranges[i]>10)
+			if(isinf(scan->ranges[i])||scan->ranges[i]<0.1||scan->ranges[i]>10) // 0.1 이하거나 10이상이면 버린다.
 			{
 			}
 			else
@@ -422,27 +425,25 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 				//std::cout<<roll*180./M_PI<<", "<<pitch*180./M_PI<<", "<<yaw*180./M_PI<< std::endl;
 				my_array[m_a_count][0] = degree;
 				my_array[m_a_count][1] = scan->ranges[i];
+
+				detection.x =  my_center.x + my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*enlarge;
+				detection.y =  my_center.y + -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*enlarge;
+
+				circle(my_map, detection, 3, Scalar(0), 1);
+				// my_map의 detection위치에 반지름 3의 검은색 원
+
+				line(my_map, my_center, detection, Scalar(255,255,255), 2);
+				// my_map의 my_center부터 detection까지 흰색으로 굵기 2 라인
+				
 				++m_a_count; 
 			}
 		}
 	}
-	//std::cout<< m_a_count << std::endl;
 
-	for(int i = 0; i < m_a_count; i++)
-	{
-		detection.x =  my_center.x + my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*enlarge;
-		detection.y =  my_center.y + -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*enlarge;
-
-		circle(my_map, detection, 3, Scalar(0), 1);
-		// my_map의 detection위치에 반지름 3의 검은색 원
-
-		line(my_map, my_center, detection, Scalar(255,255,255), 2);
-		// my_map의 my_center부터 detection까지 흰색으로 굵기 2 라인
-	}
 	temp_my_map = my_map.clone();
 
-	// 좌표축은 10번 마다 갱신 //
-	if(re_axis<10)
+	// 좌표축은 5번 마다 갱신 //
+	if(re_axis<5)
 	{
 		line(temp_my_map, my_center, my_axis_x_rotation, Scalar(0, 0, 255), 2); // x 빨간색
 		line(temp_my_map, my_center, my_axis_y_rotation, Scalar(0, 255, 0), 2); // y 초록색
@@ -468,6 +469,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 
 int main(int argc, char **argv)
 {
+	// 초기 좌표축 x,y 설정 //
 	my_axis_x_rotation = my_axis_x + my_center;
 	my_axis_y_rotation = my_axis_y;
 	my_axis_y_rotation.y = -my_axis_y_rotation.y;
