@@ -195,7 +195,7 @@ while True:
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-// 3. 방향키 값 캐치 //
+// 3-1. 방향키 값 캐치 //
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 cd && vi test.py
 python3 -m pip install keyboard
@@ -221,13 +221,91 @@ while True:
 
 
 
+// 3-2. 방향키 값 캐치 (저수준 생성) //
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+###############################################################################################################################
+#!/usr/bin/python3
+
+import os
+import sys    
+import termios
+import fcntl
+import time
+
+def getch():
+  fd = sys.stdin.fileno()
+
+  oldterm = termios.tcgetattr(fd)
+  newattr = termios.tcgetattr(fd)
+  newattr[3] = newattr[3] & ~termios.ICANON & ~termios.ECHO
+  termios.tcsetattr(fd, termios.TCSANOW, newattr)
+
+  oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
+  fcntl.fcntl(fd, fcntl.F_SETFL, oldflags | os.O_NONBLOCK)
+
+  try:        
+    while 1:            
+      try:
+        c = sys.stdin.read(3)
+        break
+      except IOError: pass
+  finally:
+    termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
+    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
+  return c
+
+while True:
+	hello = getch()
+	if hello == 'i':
+		print("123")
+	elif hello == '\x1b[A':
+		print("ooo")
+	time.sleep(1)
+###############################################################################################################################
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 
 
 
+// 3-3. 키보드 입력 사용할것 //
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+###############################################################################################################################
+#!/usr/bin/python3
 
+import tty, termios, sys
+import re
 
+# ANSI : https://godoc.org/github.com/tiborvass/uniline/ansi
+
+def getchar():
+
+	fd = sys.stdin.fileno()
+	old_settings = termios.tcgetattr(fd)
+	try:
+		tty.setraw(sys.stdin.fileno())
+		ch = sys.stdin.read(1)
+	finally:
+		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+	return ch
+   
+while 1:
+	ch = getchar()
+	temp_ch = ch
+	if (re.findall('[\w]',temp_ch)):
+		print ('You pressed keyboard, not arrow', temp_ch)
+	elif (temp_ch == '\x03'):
+		print ('Bye Bye, ByeBye ya')
+		sys.exit(1)
+	else:
+		for i in range(2):
+			ch = getchar()
+			temp_ch = temp_ch + ch
+		if (temp_ch == '\x1b[A'):
+			print ('You pressed up arrow\n')
+
+###############################################################################################################################
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 
