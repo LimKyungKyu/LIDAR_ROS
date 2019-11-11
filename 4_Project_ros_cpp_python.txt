@@ -1,0 +1,933 @@
+// 1. 설치  //
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//1-1. ROS - Melodic 설치//
+http://wiki.ros.org/melodic/Installation/Ubuntu
+
+pc가 packages.ros.org로부터 ROS관련 소프트웨어를 받을 수 있도록 설정
+sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+
+다운로드 받는 패키지가 신뢰 할 수 있다는 것을 확인하기 위해 key값을 설정
+sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654
+
+sudo apt-get update
+sudo apt-get install -y liblua5.2-dev libgflags-dev libsuitesparse-dev libgoogle-glog-dev
+sudo apt install ros-melodic-desktop-full
+	오류나는경우
+	sudo apt-get --fix-broken install
+sudo rosdep init
+rosdep update
+	rosdep은 ROS 구동에 필요한 요소를 쉽게 설치하도록 돕는다
+
+echo "source /opt/ros/melodic/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+	이렇게 echo를 사용해 bashrc에 추가하면 터미널이 켜질때마다 /opt/ros/melodic/setup.bash를 수행한다.
+	지금 켠 터미널에만 한번 적용하고, 그 터미널을 껐다가 다시 켰을때는 영향을 안주려면
+	echo를 쓰지말고 바로 source /opt/ros/melodic/setup.bash 하면 된다. # Tag2 #
+	여기선 echo로 추가해놓는것을 권장한다.
+	나중에 cd && sudo vi .bashrc의 맨아랫줄로 가서 echo로 추가한 내용을 지우면 원상태로 돌아온다.
+sudo apt-get install python-rosinstall python-rosinstall-generator python-wstool build-essential
+	의존성 패키지 설치 오류가 발생하면 필요 모듈을 아래에서 다운로드 하고 위 명령어를 다시 수행한다.
+	http://repos.ros.org/repos/ros_bootstrap/pool/main/p/python-rospkg-modules/
+	sudo dpkg -i --force-overwrite python-rospkg-modules_1.1.10-1_all.deb
+
+
+
+
+
+// 1-2. Cartographer ROS 설치 // 
+https://google-cartographer-ros.readthedocs.io/en/latest/compilation.html
+
+sudo apt-get install -y python-wstool python-rosdep ninja-build
+mkdir Google_Cartographer && cd Google_Cartographer && wstool init src #Tag1#
+wstool merge -t src https://raw.githubusercontent.com/googlecartographer/cartographer_ros/master/cartographer_ros.rosinstall
+wstool update -t src
+src/cartographer/scripts/install_proto3.sh
+sudo rosdep init
+	Cartographer ROS를 사용해야 하는데 위에서 설치하느라 sudo rosdep init했기때문에 아래와 같은 에러가 나온다.
+	The command ‘sudo rosdep init’ will print an error if you have already executed it since installing ROS. This error can be ignored.
+	해당 위치로 이동해서 파일을 삭제하고 다시 sudo rosdep init한다.
+	sudo rm -rf /etc/ros/rosdep/sources.list.d/20-default.list && sudo rosdep init
+rosdep update
+	오류시 : sudo rosdep fix-permissions 입력하고 다시 rosdep update
+cd ~/Google_Cartographer && sudo rosdep install --from-paths src --ignore-src --rosdistro=${ROS_DISTRO} -y
+	오류시 : #Tag1# 으로 돌아가서 src 폴더 지우고  wstool init src 부터 다시한다.
+catkin_make_isolated --install --use-ninja
+	일반적인 catkin_make와 다르게 catkin_make_isolated로 설치한다.
+
+source devel_isolated/setup.bash
+echo "source ~/Google_Cartographer/devel_isolated/setup.bash" >> ~/.bashrc && source ~/.bashrc
+
+
+
+
+
+// 1-3. Google_Cartographer + YDLIDAR X2 설치 //
+cd && mkdir -p Project_ROS_nano/src && cd Project_ROS_nano/src
+git clone https://github.com/YDLIDAR/ydlidar_ros.git
+cd ydlidar_ros && git checkout X2
+	ydlidar_ros 폴더로 이동후 X2 제품에 해당하는 X2 브랜치로 이동하는 git 명령어
+cd && cd Project_ROS_nano && catkin_make
+cd && cd Project_ROS_nano && source devel/setup.bash
+echo "source ~/Project_ROS_nano/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+	source ~/.bashrc는 터미널을 재부팅하지 않아도 .bashrc 파일을 갱신 시켜 현재 터미널에서 사용 가능하게 만든다.
+	예제를 따라하다 보면 여러개의 ROS를 사용하는 경우 echo가 여러번 입력되서 setup.bash가 현재 필요한 ROS로 설정되지 않았을 수 있다.
+	cd && sudo vi .bashrc 입력해서 가장 마지막줄에 현재 사용할 setup, 즉 source ~/carto_with_yd/devel/setup.bash 가 있는지 확인한다. # Tag1 #
+
+cd && cd Project_ROS_nano/src
+git clone https://github.com/msadowski/x2_cartographer.git
+git submodule update --init
+
+sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
+	모든 의존성 패키지를 포함시키는 명령어이다.
+	현재 ~/Project_nano/src안에 cartographer가 없고 ~/Google_Cartographer에 깔려있으니까 이 폴더를 활용하려고 위명령어를 입력한다.
+
+roscd ydlidar/startup
+sudo chmod 0777 *
+sudo sh initenv.sh
+	/dev 폴더에 ydlidar를 만들어주는 작업이다.
+	위 3줄의 명령어 입력 후에 LIDAR 와 Jetson tx2의 usb를 연결하고, LIDAR가 돌아가면 빼고 다시 usb를 연결한다.
+
+참고 : 헤더파일 위치 : cd /opt/ros/melodic/include
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 2. 패키지 공간 생성 //
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+cd && cd Project_ROS_nano/src && catkin_create_pkg project_ros_cpp std_msgs roscpp rospy
+cd && cd Project_ROS_nano/src && catkin_create_pkg project_ros_python std_msgs roscpp rospy
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 3. 토픽을 Subscribe하여 모터 제어하는 코드 작성 //
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+python3 -m pip install Adafruit-MotorHAT
+
+// 3-1-1. 모터 드라이버 작성 1 //
+###############################################################################################################################
+cd && cd Project_ROS_nano/src/project_ros_python/include && vi motor.py
+###############################################################################################################################
+import atexit
+from Adafruit_MotorHAT import Adafruit_MotorHAT
+import traitlets
+from traitlets.config.configurable import Configurable
+
+
+class Motor(Configurable):
+
+    value = traitlets.Float()
+    
+    # config
+    alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    beta = traitlets.Float(default_value=0.0).tag(config=True)
+
+    def __init__(self, driver, channel, *args, **kwargs):
+        super(Motor, self).__init__(*args, **kwargs)  # initializes traitlets
+
+        self._driver = driver
+        self._motor = self._driver.getMotor(channel)
+        atexit.register(self._release)
+        
+    @traitlets.observe('value')
+    def _observe_value(self, change):
+        self._write_value(change['new'])
+
+    def _write_value(self, value):
+        """Sets motor value between [-1, 1]"""
+        mapped_value = int(255.0 * (self.alpha * value + self.beta))
+        speed = min(max(abs(mapped_value), 0), 255)
+        self._motor.setSpeed(speed)
+        if mapped_value < 0:
+            self._motor.run(Adafruit_MotorHAT.FORWARD)
+        else:
+            self._motor.run(Adafruit_MotorHAT.BACKWARD)
+
+    def _release(self):
+        """Stops motor by releasing control"""
+        self._motor.run(Adafruit_MotorHAT.RELEASE)
+
+
+// 3-1-2. 모터 드라이버 작성 2 //
+###############################################################################################################################
+cd && cd Project_ROS_nano/src/project_ros_python/include && vi robot.py
+###############################################################################################################################
+import time
+import traitlets
+from traitlets.config.configurable import SingletonConfigurable
+from Adafruit_MotorHAT import Adafruit_MotorHAT
+from motor import Motor
+
+
+class Robot(SingletonConfigurable):
+    
+    left_motor = traitlets.Instance(Motor)
+    right_motor = traitlets.Instance(Motor)
+
+    # config
+    i2c_bus = traitlets.Integer(default_value=1).tag(config=True)
+    left_motor_channel = traitlets.Integer(default_value=1).tag(config=True)
+    left_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    right_motor_channel = traitlets.Integer(default_value=2).tag(config=True)
+    right_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    
+    def __init__(self, *args, **kwargs):
+        super(Robot, self).__init__(*args, **kwargs)
+        self.motor_driver = Adafruit_MotorHAT(i2c_bus=self.i2c_bus)
+        self.left_motor = Motor(self.motor_driver, channel=self.left_motor_channel, alpha=self.left_motor_alpha)
+        self.right_motor = Motor(self.motor_driver, channel=self.right_motor_channel, alpha=self.right_motor_alpha)
+        
+    def set_motors(self, left_speed, right_speed):
+        self.left_motor.value = left_speed
+        self.right_motor.value = right_speed
+        
+    def forward(self, speed=1.0, duration=None):
+        self.left_motor.value = speed
+        self.right_motor.value = speed
+
+    def backward(self, speed=1.0):
+        self.left_motor.value = -speed
+        self.right_motor.value = -speed
+
+    def left(self, speed=1.0):
+        self.left_motor.value = -speed
+        self.right_motor.value = speed
+
+    def right(self, speed=1.0):
+        self.left_motor.value = speed
+        self.right_motor.value = -speed
+
+    def stop(self):
+        self.left_motor.value = 0
+        self.right_motor.value = 0
+
+
+
+
+
+
+
+// 3-2. 수신할 메세지 작성 //
+cd && cd Project_ROS_nano/src/project_ros_python && mkdir msg && cd msg && vi nano_control.msg
+int32 move_message
+
+cd && cd Project_ROS_nano/src/project_ros_python && vi CMakeLists.txt
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  message_generation
+)
+
+ add_message_files(
+   FILES
+   nano_control.msg
+ )
+
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+ )
+
+catkin_package(
+#  INCLUDE_DIRS include
+   LIBRARIES project_ros_python
+   CATKIN_DEPENDS rospy std_msgs message_runtime
+#  DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+
+
+cd && cd Project_ROS_nano/src/project_ros_python && vi package.xml
+<build_depend>message_generation</build_depend>
+<exec_depend>message_runtime</exec_depend>
+
+
+
+
+
+// 3-3. 토픽을 받아 움직이는 프로그램 작성 //
+// 토픽 이름은 move_topic, 데이터 형식은 Int32, 메세지 이름은 move_message //###############################################################################################################################
+cd && cd Project_ROS_nano/src/project_ros_python/src && vi ROS_move.py
+###############################################################################################################################
+#!/usr/bin/env python3
+
+from robot import Robot
+import time
+import rospy
+from project_ros_python.msg import nano_control
+
+robot = Robot()
+
+left_now = 0.0
+right_now = 0.0
+
+def callback(data):
+	global left_now
+	global right_now 
+	move_value = data.move_message
+	rospy.loginfo("I heard %d", move_value)
+	
+	if ( move_value == 1 ):
+		# 직진
+		robot.set_motors(0.5, 0.5)
+		left_now = 0.5
+		right_now = 0.5
+
+	if ( move_value == 2 ):
+		# 좌회전
+		if (left_now > 0.5):
+			left_now = 0.5
+			robot.left_motor.value = left_now - 0.01
+			left_now = 0.49
+		elif (left_now <= 0.0):
+			robot.left_motor.value = 0.0
+			left_now = 0.0
+		else:
+			robot.left_motor.value = left_now - 0.01
+			left_now = left_now - 0.01
+
+		if (right_now > 0.5):
+			robot.right_motor.value = 0.5
+			right_now = 0.5
+		else :
+			robot.right_motor.value = right_now + 0.01
+			right_now = right_now + 0.01
+
+	if ( move_value == 3 ):
+		# 우회전
+		if (left_now > 0.5):
+			robot.left_motor.value = 0.5
+			left_now = 0.5
+		else:
+			robot.left_motor.value = left_now + 0.01
+			left_now = left_now + 0.01
+
+		if (right_now > 0.5):
+			right_now = 0.5
+			robot.right_motor.value = right_now - 0.01
+			right_now = 0.49
+		elif (right_now <= 0.0):
+			robot.right_motor.value = 0.0
+			right_now = 0.0
+		else:
+			robot.right_motor.value = right_now - 0.01
+			right_now = right_now - 0.01
+
+	if ( move_value == 4 ):
+		# 후진
+		robot.set_motors(-0.5, -0.5)
+		left_now = -0.5
+		right_now = -0.5
+
+	if ( move_value == 5 ):
+		# 정지
+		robot.set_motors(0.0, 0.0)		
+		left_now = 0.0
+		right_now = 0.0
+
+def wait_listen():
+	rospy.init_node('move_subscriber_node', anonymous=True)
+	rospy.Subscriber('move_topic', nano_control, callback)
+	time.sleep(0.1)
+	rospy.spin()
+
+if __name__=='__main__':
+	wait_listen()
+###############################################################################################################################
+
+cd && cd Project_ROS_nano/src/project_ros_python/src && chmod +x ROS_move.py
+cd && cd Project_ROS_nano && catkin_make
+
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/Project_ROS_nano/src/project_ros_python/msg"
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/Project_ROS_nano/src/project_ros_python/include"
+echo "source ~/Project_ROS_nano/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+
+	오류시 sudo apt-get install python3-pip
+	python3 -m pip install traitlets
+	python3 -m pip install Adafruit_MotorHAT
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 4. 토픽을 발생시키는 코드 작성 //
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// 4-1. 키보드로 컨트롤 값 퍼블리싱 하기 //
+###############################################################################################################################
+cd && cd Project_ROS_nano/src/project_ros_python/src && vi keyboard_control.py
+###############################################################################################################################
+#!/usr/bin/python3
+
+import rospy
+import time
+from project_ros_python.msg import nano_control
+import tty, termios, sys
+import re
+
+# ANSI : https://godoc.org/github.com/tiborvass/uniline/ansi
+
+def getchar():
+
+	fd = sys.stdin.fileno()
+	old_settings = termios.tcgetattr(fd)
+	try:
+		tty.setraw(sys.stdin.fileno())
+		ch = sys.stdin.read(1)
+	finally:
+		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+	return ch
+   
+
+
+def keyboard_order():
+
+	while not rospy.is_shutdown():
+		ch = getchar()
+		temp_ch = ch
+		if (re.findall('[\w]',temp_ch)):
+			print ('You pressed : ',temp_ch,'. that is not arrow.')
+			if ( temp_ch == 'o'):
+				print ('Stop !!!')
+				pub.publish(5)
+		elif (temp_ch == '\x03'):
+			print ('Bye Bye, ByeBye ya')
+			sys.exit(1)
+		else:
+			for i in range(2):
+				ch = getchar()
+				temp_ch = temp_ch + ch
+			if (temp_ch == '\x1b[A'):
+				print ('You pressed up arrow\n')
+				pub.publish(1)
+			elif (temp_ch == '\x1b[D'):
+				print ('You pressed left arrow\n')
+				pub.publish(2)
+			elif (temp_ch == '\x1b[C'):
+				print ('You pressed right arrow\n')
+				pub.publish(3)
+			elif (temp_ch == '\x1b[B'):
+				print ('You pressed down arrow\n')
+				pub.publish(4)
+
+		time.sleep(0.1)
+
+if __name__=='__main__':
+	try:
+		pub = rospy.Publisher('move_topic', nano_control, queue_size=1)
+		rospy.init_node('move_keyboard_node', anonymous=True)
+		keyboard_order()
+
+	except rospy.ROSInterruptException:
+		pass
+###############################################################################################################################
+cd && cd Project_ROS_nano/src/project_ros_python/src && chmod +x keyboard_control.py
+cd && cd Project_ROS_nano && catkin_make
+echo "source ~/Project_ROS_nano/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+
+
+
+
+
+
+
+
+// 4-2. 각도로 컨트롤 값 퍼블리싱 하기 //
+// 4-2-1. 각도 퍼블리싱 //
+
+###############################################################################################################################
+cd && cd Project_ROS_nano/src/project_ros_python/src && vi degree_publisher.py
+###############################################################################################################################
+#!/usr/bin/python3
+
+"""
+https://github.com/Tijndagamer/mpu6050
+"""
+
+"""
+This program handles the communication over I2C
+between a Raspberry Pi and a MPU-6050 Gyroscope / Accelerometer combo.
+Made by: MrTijn/Tijndagamer
+Released under the MIT License
+Copyright 2015
+"""
+
+import smbus
+import time
+import math
+MY_PI = 3.14159265358979323846
+
+
+class MPU6050:
+    # Global Variables
+    GRAVITIY_MS2 = 9.80665
+    address = None
+    bus = smbus.SMBus(0) # 사용되는 i2c 번호
+
+    # Scale Modifiers
+    ACCEL_SCALE_MODIFIER_2G = 16384.0
+    ACCEL_SCALE_MODIFIER_4G = 8192.0
+    ACCEL_SCALE_MODIFIER_8G = 4096.0
+    ACCEL_SCALE_MODIFIER_16G = 2048.0
+
+    GYRO_SCALE_MODIFIER_250DEG = 131.0
+    GYRO_SCALE_MODIFIER_500DEG = 65.5
+    GYRO_SCALE_MODIFIER_1000DEG = 32.8
+    GYRO_SCALE_MODIFIER_2000DEG = 16.4
+
+    # Pre-defined ranges
+    ACCEL_RANGE_2G = 0x00
+    ACCEL_RANGE_4G = 0x08
+    ACCEL_RANGE_8G = 0x10
+    ACCEL_RANGE_16G = 0x18
+
+    GYRO_RANGE_250DEG = 0x00
+    GYRO_RANGE_500DEG = 0x08
+    GYRO_RANGE_1000DEG = 0x10
+    GYRO_RANGE_2000DEG = 0x18
+
+    # MPU-6050 Registers
+    PWR_MGMT_1 = 0x6B
+    PWR_MGMT_2 = 0x6C
+
+    SELF_TEST_X = 0x0D
+    SELF_TEST_Y = 0x0E
+    SELF_TEST_Z = 0x0F
+    SELF_TEST_A = 0x10
+
+    ACCEL_XOUT0 = 0x3B
+    ACCEL_XOUT1 = 0x3C
+    ACCEL_YOUT0 = 0x3D
+    ACCEL_YOUT1 = 0x3E
+    ACCEL_ZOUT0 = 0x3F
+    ACCEL_ZOUT1 = 0x40
+
+    TEMP_OUT0 = 0x41
+    TEMP_OUT1 = 0x42
+
+    GYRO_XOUT0 = 0x43
+    GYRO_XOUT1 = 0x44
+
+    GYRO_YOUT0 = 0x45
+    GYRO_YOUT1 = 0x46
+
+    GYRO_ZOUT0 = 0x47
+    GYRO_ZOUT1 = 0x48
+
+    ACCEL_CONFIG = 0x1C
+    GYRO_CONFIG = 0x1B
+
+    def __init__(self, address):
+        self.address = address
+
+        # Wake up the MPU-6050 since it starts in sleep mode
+        self.bus.write_byte_data(self.address, self.PWR_MGMT_1, 0x00)
+
+    # I2C communication methods
+
+    def read_i2c_word(self, register):
+        """Read two i2c registers and combine them.
+        register -- the first register to read from.
+        Returns the combined read results.
+        """
+
+        # Read the data from the registers
+        high = self.bus.read_byte_data(self.address, register)
+        low = self.bus.read_byte_data(self.address, register + 1)
+
+        value = (high << 8) + low
+        if (value >= 0x8000):
+            return -((65535 - value) + 1)
+        else:
+            return value
+
+    # MPU-6050 Methods
+    def get_temp(self):
+        """Reads the temperature from the onboard temperature sensor of the MPU-6050.
+        Returns the temperature in degrees Celcius.
+        """
+        # Get the raw data
+        raw_temp = self.read_i2c_word(self.TEMP_OUT0)
+
+        # Get the actual temperature using the formule given in the
+        # MPU-6050 Register Map and Descriptions revision 4.2, page 30
+        actual_temp = (raw_temp / 340) + 36.53
+
+        # Return the temperature
+        return actual_temp
+
+    def set_accel_range(self, accel_range):
+        """Sets the range of the accelerometer to range.
+        accel_range -- the range to set the accelerometer to. Using a
+        pre-defined range is advised.
+        """
+
+        # First change it to 0x00 to make sure we write the correct value later
+        self.bus.write_byte_data(self.address, self.ACCEL_CONFIG, 0x00)
+
+        # Write the new range to the ACCEL_CONFIG register
+        self.bus.write_byte_data(self.address, self.ACCEL_CONFIG, accel_range)
+
+    def read_accel_range(self, raw = False):
+        """Reads the range the accelerometer is set to.
+        If raw is True, it will return the raw value from the ACCEL_CONFIG
+        register
+        If raw is False, it will return an integer: -1, 2, 4, 8 or 16. When it
+        returns -1 something went wrong.
+        """
+
+        # Get the raw value
+        raw_data = self.bus.read_byte_data(self.address, self.ACCEL_CONFIG)
+
+        if raw is True:
+            return raw_data
+
+        elif raw is False:
+            if raw_data == self.ACCEL_RANGE_2G:
+                return 2
+            elif raw_data == self.ACCEL_RANGE_4G:
+                return 4
+            elif raw_data == self.ACCEL_RANGE_8G:
+                return 8
+            elif raw_data == self.ACCEL_RANGE_16G:
+                return 16
+            else:
+                return -1
+
+    def get_accel_data(self, g = False):
+        """Gets and returns the X, Y and Z values from the accelerometer.
+        If g is True, it will return the data in g
+        If g is False, it will return the data in m/s^2
+        Returns a dictionary with the measurement results.
+        """
+        # Read the data from the MPU-6050
+        x = self.read_i2c_word(self.ACCEL_XOUT0)
+        y = self.read_i2c_word(self.ACCEL_YOUT0)
+        z = self.read_i2c_word(self.ACCEL_ZOUT0)
+
+        accel_scale_modifier = None
+        accel_range = self.read_accel_range(True)
+
+        if accel_range == self.ACCEL_RANGE_2G:
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_2G
+        elif accel_range == self.ACCEL_RANGE_4G:
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_4G
+        elif accel_range == self.ACCEL_RANGE_8G:
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_8G
+        elif accel_range == self.ACCEL_RANGE_16G:
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_16G
+        else:
+            print("Unkown range - accel_scale_modifier set to self.ACCEL_SCALE_MODIFIER_2G")
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_2G
+
+        x = x / accel_scale_modifier
+        y = y / accel_scale_modifier
+        z = z / accel_scale_modifier
+
+        if g is True:
+            return {'x': x, 'y': y, 'z': z}
+        elif g is False:
+            x = x * self.GRAVITIY_MS2
+            y = y * self.GRAVITIY_MS2
+            z = z * self.GRAVITIY_MS2
+            return {'x': x, 'y': y, 'z': z}
+
+    def set_gyro_range(self, gyro_range):
+        """Sets the range of the gyroscope to range.
+        gyro_range -- the range to set the gyroscope to. Using a pre-defined
+        range is advised.
+        """
+
+        # First change it to 0x00 to make sure we write the correct value later
+        self.bus.write_byte_data(self.address, self.GYRO_CONFIG, 0x00)
+
+        # Write the new range to the ACCEL_CONFIG register
+        self.bus.write_byte_data(self.address, self.GYRO_CONFIG, gyro_range)
+
+    def read_gyro_range(self, raw = False):
+        """Reads the range the gyroscope is set to.
+        If raw is True, it will return the raw value from the GYRO_CONFIG
+        register.
+        If raw is False, it will return 250, 500, 1000, 2000 or -1. If the
+        returned value is equal to -1 something went wrong.
+        """
+
+        # Get the raw value
+        raw_data = self.bus.read_byte_data(self.address, self.GYRO_CONFIG)
+
+        if raw is True:
+            return raw_data
+        elif raw is False:
+            if raw_data == self.GYRO_RANGE_250DEG:
+                return 250
+            elif raw_data == self.GYRO_RANGE_500DEG:
+                return 500
+            elif raw_data == self.GYRO_RANGE_1000DEG:
+                return 1000
+            elif raw_data == self.GYRO_RANGE_2000DEG:
+                return 2000
+            else:
+                return -1
+
+    def get_gyro_data(self):
+        """Gets and returns the X, Y and Z values from the gyroscope.
+        Returns the read values in a dictionary.
+        """
+
+        # Read the raw data from the MPU-6050
+        x = self.read_i2c_word(self.GYRO_XOUT0)
+        y = self.read_i2c_word(self.GYRO_YOUT0)
+        z = self.read_i2c_word(self.GYRO_ZOUT0)
+
+        gyro_scale_modifier = None
+        gyro_range = self.read_gyro_range(True)
+
+        if gyro_range == self.GYRO_RANGE_250DEG:
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_250DEG
+        elif gyro_range == self.GYRO_RANGE_500DEG:
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_500DEG
+        elif gyro_range == self.GYRO_RANGE_1000DEG:
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_1000DEG
+        elif gyro_range == self.GYRO_RANGE_2000DEG:
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_2000DEG
+        else:
+            print("Unkown range - gyro_scale_modifier set to self.GYRO_SCALE_MODIFIER_250DEG")
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_250DEG
+
+        x = x / gyro_scale_modifier
+        y = y / gyro_scale_modifier
+        z = z / gyro_scale_modifier
+
+        return {'x': x, 'y': y, 'z': z}
+
+    def get_all_data(self):
+        """Reads and returns all the available data."""
+        temp = get_temp()
+        accel = get_accel_data()
+        gyro = get_gyro_data()
+
+        return [accel, gyro, temp]
+
+# Create a new instance of the MPU6050 class
+sensor = MPU6050(0x68)
+
+dt = 0.0
+float_gy_z = 0.0
+yaw = 0.0
+time_check_1 = 0.0
+
+while True:
+
+	accel_data = sensor.get_accel_data()
+	gyro_data = sensor.get_gyro_data()
+	temp_time = time_check_1
+	time_check_1 = time.time()
+
+	if (temp_time == 0.0):
+		pass
+	else:
+		dt = (time_check_1 - temp_time);
+	
+	ac_x = accel_data['x']
+	ac_y = accel_data['y']
+	ac_z = accel_data['z']
+	gy_x = gyro_data['x']
+	gy_y = gyro_data['y']
+	gy_z = gyro_data['z']
+
+	roll = math.atan2(ac_y, math.sqrt(ac_x*ac_x + ac_z*ac_z))*180.0/MY_PI;
+	pitch = math.atan2(ac_x, math.sqrt(ac_y*ac_y + ac_z*ac_z))*180.0/MY_PI;
+	float_gy_z = float(gy_z)
+	yaw = (yaw + float_gy_z*dt)*MY_PI/180.0;
+
+	print("%s" % roll)
+	print("%s" % pitch)
+	print("%s" % yaw)
+	print("")
+	time.sleep(0.1)
+
+###############################################################################################################################
+cd && cd Project_ROS_nano/src/project_ros_python/src && chmod +x degree_publisher.py
+cd && cd Project_ROS_nano && catkin_make
+echo "source ~/Project_ROS_nano/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+
+
+LSM303DLHC
+http://www.devicemart.co.kr/goods/view?no=1177212
+python3 -m pip install adafruit-circuitpython-lsm303dlh-mag
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 3. 빌드 // 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+cd ~/Project_ROS_nano && catkin_make
+echo "source ~/Project_ROS_nano/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
