@@ -1,0 +1,10 @@
+sudo vi /etc/X11/xorg.conf
+Section "Screen"
+   Identifier    "Default Screen"
+   Monitor        "Configured Monitor"
+   Device        "Default Device"
+   SubSection "Display"
+       Depth    24
+       Virtual 1920 1080
+   EndSubSection
+EndSection
