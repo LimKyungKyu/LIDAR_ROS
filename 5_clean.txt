@@ -69,8 +69,10 @@ cd && cd Project_ROS_nano/src/project_ros_cpp/src && vi lidar_make_map.cpp
 #include <cstdio>
 #define RAD2DEG(x) ((x)*180.0/M_PI)
 
+
 using namespace cv;
 using namespace std;
+
 
 // 초기 맵 세팅 //
 // 중심 (20, 20) //
@@ -80,27 +82,34 @@ using namespace std;
 // 1픽셀 = 1m, 15배 확대햇으면 15픽셀 = 1m 이다.
 #define enlarge 15
 #define padding 0
-Mat my_map(40*enlarge, 40*enlarge, CV_32FC1, Scalar(0));
-// 40x40을 15배확대, float32형 1채널, 0 = 검은색으로 채운다.
+Mat my_map(40*enlarge, 40*enlarge, CV_32FC1, Scalar(0)); // 40x40을 15배확대, float32형 3채널, 0 = 검은색으로 채운다.
+Mat re_map(40*enlarge, 40*enlarge, CV_32FC1, Scalar(0)); // 초기화를 위한 맵 변수 선언
+Mat my_map_ch3; // 3채널 변환을 위한 맵 변수 선언
+Mat my_map_rotation; // 회전을 위한 맵 변수 선언
+int re_map_count = 0; // 맵 초기화 카운트를 위한 변수 선언
 
-// 초기 맵에 그릴 초기 좌표, 좌표계
-Point2d my_center(my_map.size().width/2, my_map.size().height/2);
-Point2d carto_center;
-Point2d my_axis_x(my_map.size().width/8,0);
-Point2d my_axis_y(0,my_map.size().height/8);
-Point2d my_axis_x_rotation, my_axis_y_rotation;
-Mat temp_my_map; // 좌표축 그리기 전에 원본 맵을 보존 시킨다.
-int re_axis = 0; // 좌표축 갱신을 위한 선언
+
+// 초기 좌표, 좌표계 세팅 //
+Point2d my_center(my_map.size().width/2, my_map.size().height/2); // 초기 중심 좌표
+Point2d carto_center; // 카토그래퍼 호환 좌표
+Point2d my_axis_x(my_map.size().width/8,0); // x축 좌표계
+Point2d my_axis_y(0,my_map.size().height/8); // y축 좌표계
+Point2d my_axis_x_rotation, my_axis_y_rotation; // IMU 회전 좌표계
+int re_axis_count = 0; // 좌표축 갱신을 위한 선언
+
 
 int m_a_count = 0; // 유효한 거리값 개수 확인을 위한 선언
-Point2d detection; // 유효한 좌표를 위한 변수 선언
+Point2d detection; // 유효한 좌표저장을 위한 변수 선언
 
-// IMU에서 받을 각도를 위한 변수 선언 
-double roll = 0.0;
-double pitch = 0.0;
-double yaw = 0.0;
 
-// 카토그래퍼에서 좌표를 받기 위한 함수 //
+// IMU각도 저장을 위한 변수 선언 
+float get_roll = 0.0;
+float get_pitch = 0.0;
+float get_yaw = 0.0;
+
+
+
+// 카토그래퍼에서 좌표를 받는 함수 //
 void from_cartographer_get_point()
 {
 	tf::TransformListener tfl;
@@ -115,24 +124,24 @@ void from_cartographer_get_point()
 	//std::cout<<"("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
 
 	// 이동한 만큼 센터를 수정
-	carto_center.x = my_center.x + Coordinate_3D.getX();
-	carto_center.y = my_center.y + Coordinate_3D.getY();
-	//printf("(x, y) : [%.3f, %.3f]\n", carto_center.x , carto_center.y);
+	carto_center.x = my_center.x + Coordinate_3D.getX()*enlarge;
+	carto_center.y = my_center.y + Coordinate_3D.getY()*enlarge;
+	printf("(x, y) : [%.3f, %.3f]\n", carto_center.x , carto_center.y);
 }
 
 // IMU에서 각도를 받는 함수 //
 void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
 {
 	// msg에서 data를 꺼낸다.
-	roll = msg->roll;
-	pitch = msg->pitch;
-	yaw = msg->yaw;
-	printf("get degree : %f, %f, %f", roll, pitch, yaw);
-
+	// degree로 주어진다.
+	get_roll = msg->roll;
+	get_pitch = msg->pitch;
+	get_yaw = msg->yaw;
+	printf("get degree : %f, %f, %f\n", get_roll, get_pitch, get_yaw);
 }
 
-// 포인트 회전을 위한 함수 
-Point2d point_rotation(Point2d a, double b)
+// 포인트 회전을 위한 함수 //
+Point2d point_rotation(Point2d a, float b)
 {
 	Point2d temp_a(a.x,a.y);
 
@@ -144,18 +153,37 @@ Point2d point_rotation(Point2d a, double b)
 }
 void from_IMU_modify_axis()
 {
-	// Subscriber 선언
-	// degree_publisher.py에서 지정한 Topic명 project_degree로부터
-	// 1개의 큐를 msgCallback으로 보낸다.
-	ros::NodeHandle nh;
-	ros::Subscriber imu_sub = nh.subscribe("project_degree", 1, get_degree_from_imu);
-
-	my_axis_x_rotation = point_rotation(my_axis_x,-yaw) + my_center;
-	my_axis_y_rotation = point_rotation(my_axis_y,yaw);
+	//printf("\nhere? Tag1\n");
+	my_axis_x_rotation = point_rotation(my_axis_x,-get_yaw*(M_PI/180.0)) + carto_center;
+	my_axis_y_rotation = point_rotation(my_axis_y,get_yaw*(M_PI/180.0));
 	my_axis_y_rotation.y = -my_axis_y_rotation.y;
-	my_axis_y_rotation = my_axis_y_rotation+my_center;
-	line(temp_my_map, carto_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
-	line(temp_my_map, carto_center, my_axis_y_rotation, Scalar(0, 255, 0), 2, LINE_AA); // y 초록색
+	my_axis_y_rotation = my_axis_y_rotation + carto_center;
+	line(my_map_ch3, carto_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
+	line(my_map_ch3, carto_center, my_axis_y_rotation, Scalar(0, 255, 0), 2, LINE_AA); // y 초록색
+	printf("rotation x,y : (%f, %f)\n",my_axis_x_rotation.x, my_axis_x_rotation.y);
+	printf("rotation x,y : (%f, %f)\n",my_axis_y_rotation.x, my_axis_y_rotation.y);
+}
+
+// 맵을 다시 그리는 함수 //
+void re_map_function()
+{
+	if(re_map_count>50)
+	{
+		my_map = re_map.clone();
+		re_map_count = 0;
+	}
+	else
+	{
+		printf("map_count : %d\n", re_map_count);
+	}
+
+}
+
+// 고정된 맵을 그리기 위한 회전 함수 //
+void map_rotation()
+{
+	Mat rotatino_mask = getRotationMatrix2D(carto_center, get_yaw, 1.0);
+	warpAffine(my_map_ch3, my_map_rotation, rotatino_mask, my_map_ch3.size());
 }
 
 
@@ -169,11 +197,10 @@ void from_IMU_modify_axis()
 
 
 
-
-
-
+// 맵 그리는 함수 //
 void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 {
+	re_map_function(); // 맵을 50번 그렸으면 처음부터 다시 그린다.
 	from_cartographer_get_point(); // 함수를 호출해서 my_center를 수정한다.
 
 	// 맵 데이터 획득부분//
@@ -210,7 +237,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 				detection.y =  carto_center.y + -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*enlarge;
 
 				// my_map의 carto_center로부터 detection까지 흰색으로(255), 굵기 2, 라인 안티앨리어싱
-				line(my_map, carto_center, detection, Scalar(255,255,255), 2, LINE_AA);
+				line(my_map, carto_center, detection, Scalar(255), 2, LINE_AA);
 				// my_map의 detection위치에 반지름 0.5의 검은색 원
 				circle(my_map, detection, 0.5, Scalar(0), 1);
 				
@@ -221,37 +248,44 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 		}
 	}
 
-	// 원본 맵을 보존한다.
-	temp_my_map = my_map.clone();
-	Mat temp_my_map_3[] = {temp_my_map, temp_my_map, temp_my_map};
-	Mat temp_my_map_3ch;
-	merge(temp_my_map_3, 3, temp_my_map_3ch);
+	// 원본 맵을 보존한다. //
+	Mat in[] = {my_map, my_map, my_map};
+	merge(in, 3, my_map_ch3);
 
 	// 좌표축은 5번 마다 갱신 //
-	if(re_axis<5)
+	if(re_axis_count<5)
 	{
 		// temp_my_map의 my_center부터 my_axis_x_rotation까지 흰색으로(255), 굵기 2, 라인 안티앨리어싱
-		line(temp_my_map_3ch, carto_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
-		line(temp_my_map_3ch, carto_center, my_axis_y_rotation, Scalar(0, 255, 0), 2, LINE_AA); // y 초록색
+		line(my_map_ch3, carto_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
+		line(my_map_ch3, carto_center, my_axis_y_rotation, Scalar(0, 255, 0), 2, LINE_AA); // y 초록색
 	}
 	else
 	{
 		from_IMU_modify_axis();
-		re_axis = 0;
+		re_axis_count = 0;
+		printf("axis reset!\n");
 	}
+
+	// 맵 회전 //
+	map_rotation();
 
 	moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
 	namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
-	imshow("my_map_window", temp_my_map_3ch);
+	imshow("my_map_window", my_map_rotation);
 
 	waitKey(1);
-	++re_axis;
+	++re_axis_count;
+	++re_map_count;
 }
+
+
+
 
 int main(int argc, char **argv)
 {
-	// ROS node 통신을 위한 선언 //
+	// ROS 통신을 위한 노드 선언 //
 	ros::init(argc, argv, "draw_map_node");
+	// 노드 핸들러 선언
 	ros::NodeHandle n;
 
 	// 초기 좌표축 x,y 설정 //
@@ -260,9 +294,13 @@ int main(int argc, char **argv)
 	my_axis_y_rotation.y = -my_axis_y_rotation.y;
 	my_axis_y_rotation = my_axis_y_rotation + my_center;
 
-	// 카토그래퍼로 보내지는 /scan 토픽을 읽어서 scanCallback함수를 실행한다.
-	ros::Subscriber ydlidar_sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1000, scanCallback);
+	// 카토그래퍼에서 보내지는 /scan 토픽을 읽어서 scanCallback함수를 실행한다.
+	ros::Subscriber ydlidar_sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1, scanCallback);
+	// degree_publisher.py에서 보내지는 project_degree토픽을 읽어서 get_degree_from_imu함수를 실행한다.
+	ros::Subscriber imu_sub = n.subscribe("project_degree", 1, get_degree_from_imu);
+
 	ros::spin();
+
 
 	return 0;
 }
@@ -307,4 +345,318 @@ if(degree > -180 && degree< 180) 로 바꾸고 ydlidar_client가 들어있는 �
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 축은 맵에 고정, 맵을 역방향으로 회전 시킨다. //
+#include "ros/ros.h"
+#include "sensor_msgs/LaserScan.h"
+#include <math.h>
+#include <opencv2/opencv.hpp>
+#include "tf/transform_listener.h"
+#include "project_ros_cpp/get_degree.h"
+#define _USE_MATH_DEFINES
+#include <cstdio>
+#define RAD2DEG(x) ((x)*180.0/M_PI)
+
+
+using namespace cv;
+using namespace std;
+
+
+// 초기 맵 세팅 //
+// 중심 (20, 20) //
+// 창1 : 전체 맵 사이즈 40x40 //
+// + 창1 : 확대 15배, 1m = 15px, #define enlarge 15 //
+// + 창1 : 확대 후, 상하좌우 검은색 패딩(확대 후 매트릭스의 상하좌우 여백), #define padding 10 //
+// 1픽셀 = 1m, 15배 확대햇으면 15픽셀 = 1m 이다.
+#define enlarge 15
+#define padding 0
+Mat my_map(40*enlarge, 40*enlarge, CV_32FC1, Scalar(0)); // 40x40을 15배확대, float32형 3채널, 0 = 검은색으로 채운다.
+Mat re_map(40*enlarge, 40*enlarge, CV_32FC1, Scalar(0)); // 초기화를 위한 맵 변수 선언
+Mat my_map_ch3; // 3채널 변환을 위한 맵 변수 선언
+Mat my_map_rotation; // 회전을 위한 맵 변수 선언
+int re_map_count = 0; // 맵 초기화 카운트를 위한 변수 선언
+
+
+// 초기 좌표, 좌표계 세팅 //
+Point2d my_center(my_map.size().width/2, my_map.size().height/2); // 초기 중심 좌표
+Point2d carto_center; // 카토그래퍼 호환 좌표
+Point2d my_axis_x(my_map.size().width/8,0); // x축 좌표계
+Point2d my_axis_y(0,my_map.size().height/8); // y축 좌표계
+Point2d my_axis_x_rotation, my_axis_y_rotation; // IMU 회전 좌표계
+int re_axis_count = 0; // 좌표축 갱신을 위한 선언
+
+int m_a_count = 0; // 유효한 거리값 개수 확인을 위한 선언
+Point2d detection; // 유효한 좌표저장을 위한 변수 선언
+
+// IMU각도 저장을 위한 변수 선언 
+float get_roll = 0.0;
+float get_pitch = 0.0;
+float get_yaw = 0.0;
+
+
+
+// 카토그래퍼에서 좌표를 받는 함수 //
+void from_cartographer_get_point()
+{
+	tf::TransformListener tfl;
+	tf::StampedTransform for_get_coordinate;
+	tf::Vector3 Coordinate_3D;
+
+	tfl.waitForTransform("/odom", "/base_footprint", ros::Time(), ros::Duration(1.0));
+	tfl.lookupTransform("/odom", "/base_footprint", ros::Time(), for_get_coordinate);
+	Coordinate_3D = for_get_coordinate.getOrigin();
+
+	//std::cout<<"시작 점으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
+	//std::cout<<"("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
+
+	// 이동한 만큼 센터를 수정
+	carto_center.x = my_center.x + Coordinate_3D.getX()*enlarge;
+	carto_center.y = my_center.y + Coordinate_3D.getY()*enlarge;
+	printf("(x, y) : [%.3f, %.3f]\n", carto_center.x , carto_center.y);
+}
+
+// IMU에서 각도를 받는 함수 //
+void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
+{
+	// msg에서 data를 꺼낸다.
+	// degree로 주어진다.
+	get_roll = msg->roll;
+	get_pitch = msg->pitch;
+	get_yaw = msg->yaw;
+	printf("get degree : %f, %f, %f\n", get_roll, get_pitch, get_yaw);
+}
+
+// 포인트 회전을 위한 함수 //
+Point2d point_rotation(Point2d a, float b)
+{
+	// float b 는 라디안이 입력되야한다.
+
+	Point2d temp_a(a.x,a.y);
+
+	temp_a.x = a.x*cos(b) - a.y*sin(b);
+	temp_a.y = a.x*sin(b) + a.y*cos(b);
+
+	//std::cout<<temp_a.x<<" "<<temp_a.y<< std::endl;
+	return temp_a;
+}
+
+// 좌표축 회전을 위한 함수 //
+void from_IMU_modify_axis()
+{
+	//printf("\nhere? Tag1\n");
+	my_axis_x_rotation = point_rotation(my_axis_x,-get_yaw*(M_PI/180.0))+carto_center;
+	my_axis_y_rotation = point_rotation(my_axis_y,get_yaw*(M_PI/180.0));
+	my_axis_y_rotation.y = -my_axis_y_rotation.y;
+	my_axis_y_rotation = my_axis_y_rotation + carto_center;
+	line(my_map_ch3, carto_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
+	line(my_map_ch3, carto_center, my_axis_y_rotation, Scalar(0, 255, 0), 2, LINE_AA); // y 초록색
+	printf("rotation x,y : (%f, %f)\n",my_axis_x_rotation.x, my_axis_x_rotation.y);
+	printf("rotation x,y : (%f, %f)\n",my_axis_y_rotation.x, my_axis_y_rotation.y);
+}
+
+// 맵을 다시 그리는 함수 //
+void re_map_function()
+{
+	if(re_map_count>50)
+	{
+		my_map = re_map.clone();
+		re_map_count = 0;
+	}
+	else
+	{
+		printf("map_count : %d\n", re_map_count);
+	}
+
+}
+
+// 매트릭스 회전 함수 //
+void map_rotation(Mat target_mat)
+{
+	Mat rotatino_mask = getRotationMatrix2D(carto_center, -get_yaw, 1.0);
+	warpAffine(target_mat, my_map_rotation, rotatino_mask, my_map_ch3.size());
+}
+
+
+
+
+
+
+// 맵 그리는 함수 //
+void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
+{
+	re_map_function(); // 맵을 50번 그렸으면 처음부터 다시 그린다.
+	from_cartographer_get_point(); // 함수를 호출해서 my_center를 수정한다.
+
+	// 맵 데이터 획득부분//
+	// ydlidar로부터 직접 획득한다. //
+	// 전체 데이터 갯수를 획득한다. //
+	int count = scan->scan_time / scan->time_increment;
+
+	// count값의 최대치를 직접 ydlidar를 켜서 실험을 통해 구한다.
+	// m_a_count 변수의 값을 보고 숫자를 조정한다.
+	// 매번 채워져있는 수가 변하므로 함수가 종료되면 삭제되었다가 다시 선언되는것이 좋다.
+	double my_array[1000][2];
+
+	// 전체 데이터중 유효한 데이터를 찾는 함수 //
+	m_a_count = 0;
+	for(int i = 0; i < count; i++)
+	{
+		float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+
+		if( degree<180 && degree>-180 )
+		{
+			if( isinf(scan->ranges[i]) || scan->ranges[i]<0.1 || scan->ranges[i]>10 )
+			{
+			// ydlidar의 datasheet 참조 //
+			// 최소 0.1m, 최대 10m의 측정을 보장한다. //
+			// 무한대, 0.1m미만, 10m초과 값을 버린다. //
+			}
+			else
+			{
+				my_array[m_a_count][0] = degree;
+				my_array[m_a_count][1] = scan->ranges[i];
+
+				// openCV로 line을 생성하기 위한 좌표를 계산한다.
+				detection.x = my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*enlarge;
+				detection.y = -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*enlarge;
+
+				// 회전한 만큼 반대로 회전 시켜준다.
+				detection = point_rotation(detection, -get_yaw*(M_PI/180.0));
+
+				detection.x =  carto_center.x + detection.x;
+				detection.y =  carto_center.y + detection.y;
+
+				// my_map의 carto_center로부터 detection까지 흰색으로(255), 굵기 2, 라인 안티앨리어싱
+				line(my_map, carto_center, detection, Scalar(255), 2, LINE_AA);
+
+				// my_map의 detection위치에 반지름 0.5의 검은색 원
+				circle(my_map, detection, 0.5, Scalar(0), 1);
+				
+				// 어디에 그렸는지 출력
+				//printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
+				++m_a_count; 
+			}
+		}
+	}
+
+	// 원본 맵을 보존한다. //
+	Mat in[] = {my_map, my_map, my_map};
+	merge(in, 3, my_map_ch3);
+
+	// 좌표축은 5번 마다 갱신 //
+	if(re_axis_count<5)
+	{
+		// temp_my_map의 my_center부터 my_axis_x_rotation까지 흰색으로(255), 굵기 2, 라인 안티앨리어싱
+		line(my_map_ch3, carto_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
+		line(my_map_ch3, carto_center, my_axis_y_rotation, Scalar(0, 255, 0), 2, LINE_AA); // y 초록색
+	}
+	else
+	{
+		from_IMU_modify_axis();
+		re_axis_count = 0;
+		printf("axis reset!\n");
+	}
+
+	moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+	namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+	imshow("my_map_window", my_map_ch3);
+
+	waitKey(1);
+	++re_map_count;
+	++re_axis_count;
+}
+
+
+
+
+int main(int argc, char **argv)
+{
+	// ROS 통신을 위한 노드 선언 //
+	ros::init(argc, argv, "draw_map_node");
+	// 노드 핸들러 선언
+	ros::NodeHandle n;
+
+	// 초기 좌표축 x,y 설정 //
+	my_axis_x_rotation = my_axis_x + my_center;
+	my_axis_y_rotation = my_axis_y;
+	my_axis_y_rotation.y = -my_axis_y_rotation.y;
+	my_axis_y_rotation = my_axis_y_rotation + my_center;
+
+	// 카토그래퍼에서 보내지는 /scan 토픽을 읽어서 scanCallback함수를 실행한다.
+	ros::Subscriber ydlidar_sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1, scanCallback);
+	// degree_publisher.py에서 보내지는 project_degree토픽을 읽어서 get_degree_from_imu함수를 실행한다.
+	ros::Subscriber imu_sub = n.subscribe("project_degree", 1, get_degree_from_imu);
+
+	ros::spin();
+
+	return 0;
+}
 
