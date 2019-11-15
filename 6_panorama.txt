@@ -145,6 +145,7 @@ cmake CMakeLists.txt && make
 #include "project_ros_cpp/get_degree.h"
 #define _USE_MATH_DEFINES
 #include <cstdio>
+#include <iostream>
 #define RAD2DEG(x) ((x)*180.0/M_PI)
 
 
@@ -164,6 +165,8 @@ Mat my_map(40*enlarge, 40*enlarge, CV_32FC1, Scalar(0)); // 40x40을 15배확대
 Mat re_map(40*enlarge, 40*enlarge, CV_32FC1, Scalar(0)); // 초기화를 위한 맵 변수 선언
 Mat my_map_ch3; // 3채널 변환을 위한 맵 변수 선언
 Mat my_map_rotation; // 회전을 위한 맵 변수 선언
+Mat my_map_panorama_temp; // 파노라마 임시 저장 변수 선언
+Mat my_map_panorama_result; // 파노라마 결과 저장 변수 선언
 int re_map_count = 0; // 맵 초기화 카운트를 위한 변수 선언
 
 
@@ -213,7 +216,7 @@ void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
 	get_roll = msg->roll;
 	get_pitch = msg->pitch;
 	get_yaw = msg->yaw;
-	printf("get degree : %f, %f, %f\n", get_roll, get_pitch, get_yaw);
+	//printf("get degree : %f, %f, %f\n", get_roll, get_pitch, get_yaw);
 }
 
 // 포인트 회전을 위한 함수 //
@@ -238,36 +241,85 @@ void from_IMU_modify_axis()
 	my_axis_y_rotation = point_rotation(my_axis_y,get_yaw*(M_PI/180.0));
 	my_axis_y_rotation.y = -my_axis_y_rotation.y;
 	my_axis_y_rotation = my_axis_y_rotation + carto_center;
-	line(my_map_ch3, carto_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
-	line(my_map_ch3, carto_center, my_axis_y_rotation, Scalar(0, 255, 0), 2, LINE_AA); // y 초록색
+	line(my_map_ch3, carto_center, my_axis_x_rotation, Scalar(0, 0, 1), 2, LINE_AA); // x 빨간색
+	line(my_map_ch3, carto_center, my_axis_y_rotation, Scalar(0, 1, 0), 2, LINE_AA); // y 초록색
 	printf("rotation x,y : (%f, %f)\n",my_axis_x_rotation.x, my_axis_x_rotation.y);
 	printf("rotation x,y : (%f, %f)\n",my_axis_y_rotation.x, my_axis_y_rotation.y);
 }
 
-// 맵을 다시 그리는 함수 //
-void re_map_function()
+
+// 맵 회전 함수 //
+//void map_rotation(Mat target_mat)
+//{
+//	Mat rotatino_mask = getRotationMatrix2D(중심, 각도degree(라디안아님), 1.0);
+//	warpAffine(target_mat, my_map_rotation, rotatino_mask, my_map_ch3.size());
+//}
+
+
+
+
+// my_map 파노라마 만들기 //
+void for_panorama()
 {
-	if(re_map_count>50)
+	printf("panorama try\n");
+	
+	Mat for_3ch;
+	my_map.convertTo(for_3ch, CV_8UC3, 255, 0);
+
+        vector<uchar> for_jpg_buff;
+        vector<int> param = vector<int>(2);
+        param[0]=CV_IMWRITE_JPEG_QUALITY;
+        param[1]=95;
+        imencode(".jpg",for_3ch,for_jpg_buff,param);
+	Mat for_stitch_mat = imdecode(Mat(for_jpg_buff),CV_LOAD_IMAGE_COLOR);
+
+	imshow("temp_window", for_stitch_mat);
+	moveWindow("temp_window", 700, 100); // 모니터의 좌측 상단이 원점 (+x -y)
+	namedWindow("temp_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+	waitKey(1);
+	
+
+	// my_map_panorama_result.total()는 long unsigned int형이라서 %lu로 호출 //
+	printf("if check %lu\n", my_map_panorama_result.total());
+	vector<Mat> my_map_list; // 파노라마 작업을 수행할 공간 my_map_list
+	if ( my_map_panorama_result.total() == 0 )
 	{
-		my_map = re_map.clone();
-		re_map_count = 0;
+		printf("first try\n");
+		my_map_panorama_temp = for_stitch_mat.clone(); // 처음 수행으로 인해 my_map_panorama_result가 비어있다면 my_map을 복사해서 대체한다.
+		printf("push try\n");
+		my_map_list.push_back(my_map_panorama_temp);
+		printf("push done\n");
 	}
 	else
 	{
-		printf("map_count : %d\n", re_map_count);
+		printf("now panorama try\n");
+		my_map_panorama_temp = my_map_panorama_result.clone();
+		my_map_list.push_back(my_map_panorama_temp); // 아니라면 my_map_list에 my_map_panorama_result를 복사해 넣는다.
+	}
+	
+	printf("push2 try\n");
+	my_map_list.push_back(for_stitch_mat); // my_map_list에 현재 my_map을 넣는다.
+	printf("push2 done\n");
+	Ptr<Stitcher> map_panorama_start = Stitcher::create(); // 파노라마를 수행할 클래스 선언
+	printf("create done\n");
+	Stitcher::Status status = map_panorama_start->stitch(my_map_list, my_map_panorama_result);
+	printf("stitch done\n");
+	// 파노라마 수행
+	// 인풋 : my_map_list
+	// 아웃풋 : my_map_panorama_result
+
+	if (status != Stitcher::Status::OK)
+	{
+		cerr << "Error on stitching!" << endl;
+		return;
 	}
 
+	moveWindow("my_map_panorama_result_window", 700, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+	namedWindow("my_map_panorama_result_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+	imshow("my_map_panorama_result_window", my_map_panorama_result);
+	imwrite("panorama.jpg", my_map_panorama_result); // jpg로 저장
+	waitKey(1);
 }
-
-// 매트릭스 회전 함수 //
-void map_rotation(Mat target_mat)
-{
-	Mat rotatino_mask = getRotationMatrix2D(carto_center, -get_yaw, 1.0);
-	warpAffine(target_mat, my_map_rotation, rotatino_mask, my_map_ch3.size());
-}
-
-
-
 
 
 
@@ -280,7 +332,18 @@ void map_rotation(Mat target_mat)
 // 맵 그리는 함수 //
 void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 {
-	re_map_function(); // 맵을 50번 그렸으면 처음부터 다시 그린다.
+
+	if(re_map_count>50)
+	{
+		// for_panorama(); // my_map을 이용하여 파노라마 생성
+		my_map = re_map.clone();
+		re_map_count = 0;
+	}
+	else
+	{
+		printf("map_count : %d\n", re_map_count);
+	}
+
 	from_cartographer_get_point(); // 함수를 호출해서 my_center를 수정한다.
 
 	// 맵 데이터 획득부분//
@@ -322,15 +385,16 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 				detection.x =  carto_center.x + detection.x;
 				detection.y =  carto_center.y + detection.y;
 
-				// my_map의 carto_center로부터 detection까지 흰색으로(255), 굵기 2, 라인 안티앨리어싱
-				line(my_map, carto_center, detection, Scalar(255), 2, LINE_AA);
+				// my_map의 carto_center로부터 detection까지 흰색으로(1), 굵기 2, 라인 안티앨리어싱
+				line(my_map, carto_center, detection, Scalar(1), 2, LINE_AA);
 
 				// my_map의 detection위치에 반지름 0.5의 검은색 원
 				circle(my_map, detection, 0.5, Scalar(0), 1);
 				
 				// 어디에 그렸는지 출력
 				//printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
-				++m_a_count; 
+				++m_a_count;
+				printf("i use yaw %f\n",get_yaw);
 			}
 		}
 	}
@@ -342,9 +406,9 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 	// 좌표축은 5번 마다 갱신 //
 	if(re_axis_count<5)
 	{
-		// temp_my_map의 my_center부터 my_axis_x_rotation까지 흰색으로(255), 굵기 2, 라인 안티앨리어싱
-		line(my_map_ch3, carto_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
-		line(my_map_ch3, carto_center, my_axis_y_rotation, Scalar(0, 255, 0), 2, LINE_AA); // y 초록색
+		// my_map_ch3의 carto_center부터 my_axis_x_rotation까지 빨간색으로(0, 0, 1), 굵기 2, 라인 안티앨리어싱
+		line(my_map_ch3, carto_center, my_axis_x_rotation, Scalar(0, 0, 1), 2, LINE_AA); // x 빨간색
+		line(my_map_ch3, carto_center, my_axis_y_rotation, Scalar(0, 1, 0), 2, LINE_AA); // y 초록색
 	}
 	else
 	{
@@ -378,13 +442,27 @@ int main(int argc, char **argv)
 	my_axis_y_rotation.y = -my_axis_y_rotation.y;
 	my_axis_y_rotation = my_axis_y_rotation + my_center;
 
-	// 카토그래퍼에서 보내지는 /scan 토픽을 읽어서 scanCallback함수를 실행한다.
-	ros::Subscriber ydlidar_sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1, scanCallback);
-	// degree_publisher.py에서 보내지는 project_degree토픽을 읽어서 get_degree_from_imu함수를 실행한다.
-	ros::Subscriber imu_sub = n.subscribe("project_degree", 1, get_degree_from_imu);
-
+	// spin에 의해서 노드는 켜져있고 토픽이 들어오면 함수를 실행한다. //
+	ros::Subscriber ydlidar_sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1, scanCallback); // 카토그래퍼에서 보내지는 /scan 토픽을 읽어서 scanCallback함수를 실행한다.
+	ros::Subscriber imu_sub = n.subscribe("project_degree", 1, get_degree_from_imu); // degree_publisher.py에서 보내지는 project_degree 토픽을 읽어서 get_degree_from_imu함수를 실행한다.
 	ros::spin();
 
 	return 0;
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+	// 원본Mat.convertTo(저장할Mat,타입,alpha,beta) : alpha는 원소에 곱셈, beta는 원소에 덧셈이다.
+	// my_map.convertTo(for_3ch, CV_8UC3, 255, 0) : float는 0~1 이므로 255배 해준다.
+
+
+
+	vector<int> param_bmp, param_jpg, param_png;  //vector이라는 int형 변수 선언. 여러 요소를 추가삽입할 수 있음. 배열같은 것.
+	param_jpg.push_back(cv::IMWRITE_JPEG_QUALITY);  //JPEG 파일로 저장하기 위해
+	param_jpg.push_back(50);       //높은 값일수록 화질 좋음.용량 높음. 0~100. defalut 값은 95)
+	param_png.push_back(cv::IMWRITE_PNG_COMPRESSION);  //PNG 파일로 저장하기 위해
+	param_png.push_back(1);        //PNG 압축률 (0~9. default 값은 3). 여러 값 넣어본 결과 용량차이 없었음
+	imwrite("plus_map.jpg", my_map); // jpg로 저장

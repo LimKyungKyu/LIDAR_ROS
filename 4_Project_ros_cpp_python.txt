@@ -428,6 +428,12 @@ def callback(data):
 		left_now = 0.0
 		right_now = 0.0
 
+	if ( move_value == 6 ):
+		# 회전
+		robot.set_motors(0.2, -0.2)		
+		left_now = 0.2
+		right_now = -0.2
+
 def wait_listen():
 	rospy.init_node('move_subscriber_node', anonymous=True)
 	rospy.Subscriber('ros_move_topic', nano_control, callback)
@@ -545,6 +551,9 @@ def keyboard_order():
 			if ( temp_ch == 'o'):
 				print ('Stop !!!')
 				pub.publish(5)
+			elif ( temp_ch == 'i'):
+				print ('Spin !!!')
+				pub.publish(6)
 		elif (temp_ch == '\x03'):
 			print ('Bye Bye, ByeBye ya')
 			sys.exit(1)
@@ -885,24 +894,47 @@ class MPU6050:
 
         return [accel, gyro, temp]
 
-
 def get_from_raw():
 	# Create a new instance of the MPU6050 class
 	sensor = MPU6050(0x68)
 
-	dt = 0.0
-	float_gy_z = 0.0
 	yaw = 0.0
+	exp_count = 0
+	exp_minus = 0.0
 	stamp_time = 0.0
-	pub_count = 0
-
-	while not rospy.is_shutdown():
-		accel_data = sensor.get_accel_data()
+	dt = 0.0	
+	while ( exp_count < 10000 ):
 		gyro_data = sensor.get_gyro_data()
+
 		dt = (time.time() - stamp_time)
 		if ( stamp_time == 0.0 ):
 			dt = 0.0
+		stamp_time = time.time()
 
+		gy_x = gyro_data['x']
+		gy_y = gyro_data['y']
+		gy_z = gyro_data['z']
+
+		float_gy_z = float(gy_z)
+		yaw = (yaw + float_gy_z*dt)/2
+		exp_minus += float_gy_z
+		exp_count += 1
+
+	exp_minus = exp_minus/10000.0
+
+	dt = 0.0
+	float_gy_z = 0.0
+	stamp_time = 0.0
+	yaw = 0.0
+	for_pub = get_degree()
+	while not rospy.is_shutdown():
+
+		accel_data = sensor.get_accel_data()
+		gyro_data = sensor.get_gyro_data()
+
+		dt = (time.time() - stamp_time)
+		if ( stamp_time == 0.0 ):
+			dt = 0.0
 		stamp_time = time.time()
 
 		ac_x = accel_data['x']
@@ -912,12 +944,15 @@ def get_from_raw():
 		gy_y = gyro_data['y']
 		gy_z = gyro_data['z']
 
-		roll = math.atan2(ac_y, math.sqrt(ac_x*ac_x + ac_z*ac_z))*180.0/MY_PI;
-		pitch = math.atan2(ac_x, math.sqrt(ac_y*ac_y + ac_z*ac_z))*180.0/MY_PI;
-		float_gy_z = float(gy_z);
-		if ( float_gy_z < 0.1 and float_gy_z >-0.1 ):
-			float_gy_z = 0.0
-		yaw = (yaw + float_gy_z*dt);
+		roll = math.atan2(ac_y, math.sqrt(ac_x*ac_x + ac_z*ac_z))*180.0/MY_PI
+		pitch = math.atan2(ac_x, math.sqrt(ac_y*ac_y + ac_z*ac_z))*180.0/MY_PI
+		float_gy_z = float(gy_z) - exp_minus
+		yaw = (yaw + float_gy_z*dt)%360
+
+		# degree로 전송한다.
+		for_pub.roll = float(roll)
+		for_pub.pitch = float(pitch)
+		for_pub.yaw = float(yaw)
 
 		#print("%s" % roll)
 		#print("%s" % pitch)
@@ -925,15 +960,9 @@ def get_from_raw():
 		#print("%s" % dt)
 		#print("")
 
-		for_pub = get_degree()
-		for_pub.roll = float(roll)
-		for_pub.pitch = float(pitch)
-		for_pub.yaw = float(yaw)
+		pub.publish(for_pub)
+		#print("i send radian %f" % for_pub.yaw)
 
-		pub_count += 1
-		if (pub_count>100):
-			pub_count = 0
-			pub.publish(for_pub)
 	
 
 if __name__=='__main__':
