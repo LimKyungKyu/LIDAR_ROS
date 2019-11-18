@@ -255,7 +255,15 @@ void from_IMU_modify_axis()
 //	warpAffine(target_mat, my_map_rotation, rotatino_mask, my_map_ch3.size());
 //}
 
-
+// 맵 회전 함수 //
+//void map_rotation(Mat target_mat)
+//{
+//	Mat rotatino_mask = getRotationMatrix2D(my_center, momentary_yaw, 1.0);
+//	// x+ 0도, 반시계 방향 +, degree 사용 ( 라디안 아님 )
+//	Mat my_map_rotation;
+//	warpAffine(target_mat, my_map_rotation, rotatino_mask, target_mat.size()); // my_map_rotation에 저장한다.
+//	my_map = my_map_rotation.clone(); // 회전한결과를 다시 my_map에 복제한다.
+//}
 
 
 // my_map 파노라마 만들기 //

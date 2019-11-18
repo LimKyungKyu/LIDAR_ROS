@@ -681,3 +681,9 @@ int main(int argc, char **argv)
 
 
 https://github.com/googlecartographer/cartographer_ros/issues/1032
+
+
+참고
+http://wiki.ros.org/rosserial_arduino/Tutorials/Time%20and%20TF
+  26   t.header.frame_id = odom;
+  27   t.child_frame_id = base_link;

@@ -599,9 +599,10 @@ echo "source ~/Project_ROS_nano/devel/setup.bash" >> ~/.bashrc && source ~/.bash
 // 4-2. 각도로 컨트롤 값 퍼블리싱 하기 //
 // 4-2-0. 각도 메세지 생성 //
 cd && cd Project_ROS_nano/src/project_ros_python/msg && vi get_degree.msg
-float64 roll
-float64 pitch
-float64 yaw
+float32 roll
+float32 pitch
+float32 yaw
+float32 imu_time_stamp
 
 
 cd && cd Project_ROS_nano/src/project_ros_python && vi CMakeLists.txt
@@ -953,6 +954,7 @@ def get_from_raw():
 		for_pub.roll = float(roll)
 		for_pub.pitch = float(pitch)
 		for_pub.yaw = float(yaw)
+		for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC))
 
 		#print("%s" % roll)
 		#print("%s" % pitch)
