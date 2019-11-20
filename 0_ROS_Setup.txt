@@ -6,7 +6,6 @@ http://wiki.ros.org/ko/ROS/Introduction
 
 
 
-
 // 1. 설치  //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 1-1. ROS - Melodic 설치
@@ -34,14 +33,13 @@ source ~/.bashrc
 	echo를 쓰지말고 바로 source /opt/ros/melodic/setup.bash 하면 된다. # Tag2 #
 	여기선 echo로 추가해놓는것을 권장한다.
 	나중에 cd && sudo vi .bashrc의 맨아랫줄로 가서 echo로 추가한 내용을 지우면 원상태로 돌아온다.
+
 sudo apt-get install python-rosinstall python-rosinstall-generator python-wstool build-essential
 	의존성 패키지 설치 오류가 발생하면 필요 모듈을 아래에서 다운로드 하고 위 명령어를 다시 수행한다.
 	http://repos.ros.org/repos/ros_bootstrap/pool/main/p/python-rospkg-modules/
 	sudo dpkg -i --force-overwrite python-rospkg-modules_1.1.10-1_all.deb
 
 참고 : 헤더파일 위치 : cd /opt/ros/melodic/include
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 1-2. Cartographer ROS 설치
 https://google-cartographer-ros.readthedocs.io/en/latest/compilation.html
@@ -70,50 +68,27 @@ source ~/.bashrc
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // 2. 예제 // 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 2-1. 설치 확인을 위한 터틀심 예제
-
 roscore # 터미널 1 #
 rosrun turtlesim turtlesim_node # 터미널 2 #
 rosrun turtlesim turtle_teleop_key # 터미널 3 #
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+2-2. Google_Cartographer + YDLIDAR X2 켜보기
 
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-2-2. Google_Cartographer + YDLIDAR X2 예제
-
-cd && mkdir carto_with_yd && cd carto_with_yd && mkdir src && cd src
+cd && mkdir -p carto_with_yd/src && cd carto_with_yd/src
 git clone https://github.com/YDLIDAR/ydlidar_ros.git
 cd ydlidar_ros && git checkout X2
 	ydlidar_ros 폴더로 이동후 X2 제품에 해당하는 X2 브랜치로 이동하는 git 명령어
 cd && cd carto_with_yd && catkin_make
+
 source devel/setup.bash
 echo "source ~/carto_with_yd/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 	source ~/.bashrc는 터미널을 재부팅하지 않아도 .bashrc 파일을 갱신 시켜 현재 터미널에서 사용 가능하게 만든다.
 	예제를 따라하다 보면 여러개의 ROS를 사용하는 경우 echo가 여러번 입력되서 setup.bash가 현재 필요한 ROS로 설정되지 않았을 수 있다.
-	cd && sudo vi .bashrc 입력해서 가장 마지막줄에 현재 사용할 setup, 즉 source ~/carto_with_yd/devel/setup.bash 가 있는지 확인한다. # Tag1 #
+	cd && sudo vi .bashrc 입력해서 가장 마지막줄에 현재 사용할 setup, 즉 source ~/carto_with_yd/devel/setup.bash 가 있는지 확인한다. # Tag2 #
 
 cd && cd carto_with_yd/src
 git clone https://github.com/msadowski/x2_cartographer.git
@@ -146,60 +121,49 @@ if(degree > -180 && degree< 180) // -180도 ~ 180도 안에 있는 정보를 표
 	cd && cd carto_with_yd && catkin_make
 
 ~/carto_with_yd/src/ydlidar_ros/src/ydlidar_node.cpp
-	scan에 대한 중요 정보가 들어있다.
-	ros::Publisher scan_pub = nh.advertise<sensor_msgs::LaserScan>("scan", 1000); 를 시작으로
-	연산을 거쳐서 scan_pub.publish(scan_msg); 로 발행한다.
+	드라이버와 같다고 보면 된다. scan에 대한 중요 정보가 들어있다.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-2-3. 터미널에서 측정 값을 YDLIDAR에서 제공하는 예제를 활용해서 출력하기
-
+2-3. YDLIDAR에서 제공하는 예제로 터미널에 출력하기
 YDLIDAR X2
 공식홈페이지 : http://www.ydlidar.com/download
 예제 링크 : https://github.com/YDLIDAR/ydlidar_ros
 	위의 Google_Cartographer에서 src에 포함시킨 ydlidar_ros와 동일하다.
-	직접 ydlidar_ros만 따로 실행해보는 예제기 때문에 ydlidar_ros만 clone한다.
-	공식 홈페이지 - X2 - Ros 다운로드 -YDLIDAR ROS Manual을 참고해도 좋다.
-
+	공식 홈페이지 - X2 - Ros 다운로드 -YDLIDAR ROS Manual도 참고한다.
 
 cd && mkdir -p ~/YDLIDAR/src && cd ~/YDLIDAR/src
-	예제를 실행할 폴더인 YDLIDAR와 소스폴더인 src를 만든다.
+	예제를 실행할 폴더인 YDLIDAR와 소스폴더인 src를 만들고 src폴더 내부로 이동한다.
 
 catkin_init_workspace
-	catkin 명령어를 사용해서 YDLIDAR 폴더안에 있는 src폴더를 Workspace로 지정한다.
+	catkin 명령어를 사용해서 YDLIDAR 폴더안에 있는 src폴더 내부를 Workspace로 지정한다.
 
 cd ~/YDLIDAR && catkin_make
-	catkin 명령어를 사용해서 환경을 빌드한다.
+	src폴더 밖에서 catkin 명령어를 사용해 환경을 빌드한다.
 	catkin은 ROS의 빌드 시스템이다.
 	ROS빌드 시스템은 기본적으로 CMake(Cross Platform Make)를 이용한다.
 	CMake를 ROS에 맞도록 수정한 빌드 환경이 catkin이다.
-	빌드 환경은 CMakeList.txt를 수정하여 구성한다.
+	빌드 환경은 CMakeLists.txt를 수정하여 구성한다.
 
 echo "source ~/YDLIDAR/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 	현재 만든 Workspace를 터미널이 켜질때마다 등록한다.
-	설명은 # Tag1 #, # Tag2 #를 참고한다.
+	설명은 # Tag2 #, # Tag2 #를 참고한다.
 	간단한 예로
-	echo "source ~/YDLIDAR/devel/setup.bash" >> ~/.bashrc 를 안한 상태로 roscd ydlidar 하면
-	2-2에서 설정한 echo "source ~/carto_with_yd/devel/setup.bash" >> ~/.bashrc 때문에 ~/carto_with_yd 폴더로 이동하는데
-	echo 이후에 roscd ydlidar 하면 ~/YDLIDAR 폴더로 이동하게 된다.
-
+	echo "source ~/YDLIDAR/devel/setup.bash" >> ~/.bashrc 를 했다면 roscd ydlidar시 ~/YDLIDAR로 이동하고
+	안했다면 2-2에서 설정한 echo "source ~/carto_with_yd/devel/setup.bash" >> ~/.bashrc 때문에 ~/carto_with_yd 폴더로 이동하게 된다.
+	
 YDLIDAR의 공식 예제를 git에서 clone한다.
 cd ~/YDLIDAR/src && git clone https://github.com/YDLIDAR/ydlidar_ros
 cd ~/YDLIDAR/src/ydlidar_ros
 git checkout X2
 cd ~/YDLIDAR && catkin_make
-	cmake명령어를 통해 파일을 생성한다.
+	catkin_make명령어를 통해 파일을 생성한다.
 
 roscd ydlidar/startup
 sudo chmod 0777 *
 sudo sh initenv.sh
 	/dev 폴더에 ydlidar를 만들어주는 작업이다.
-	위 3줄의 명령어 입력 후에 LIDAR 와 Jetson tx2의 usb를 연결하고, LIDAR가 돌아가면 빼고 다시 usb를 연결한다.
+	위 3줄의 명령어 입력 후에 LIDAR 와 Jetson tx2의 usb를 연결하고
+	LIDAR가 돌아가는게 확인 되면 usb를 뽑고 다시 usb를 연결한다.
 
 ## 터미널로 값 출력해보기 ##
 roscore # 터미널 1 #
@@ -219,13 +183,7 @@ node : 최소 단위의 ROS 실행 프로세서, ROS에서는 하나의 기능�
 rosrun : ROS의 기본적인 실행 명령어, 패키지에서 하나의 노드를 실행하는데 사용된다.
 roslaunch : 한번에 복수개의 노드를 실행하는 명령어
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-2-4. Google에서 녹화해놓은 카토그래퍼 예제 불러오기
+2-4. Google에서 녹화해놓은 카토그래퍼 예제 불러오기 (딱히 안해봐도 됨)
 
 source install_isolated/setup.bash
 wget -P ~/Downloads https://storage.googleapis.com/cartographer-public-data/bags/backpack_2d/cartographer_paper_deutsches_museum.bag
@@ -233,39 +191,32 @@ roslaunch cartographer_ros demo_backpack_2d.launch bag_filename:=${HOME}/Downloa
 위치 : cd ~/catkin_ws/src/cartographer_ros/cartographer_ros/launch
 실행시 라이더의 수평각도가 변하면 안된다.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-2-5. waveshare 게임패드로 Jetson nano 움직이는 예제
+2-5. waveshare, 게임패드로 Jetson nano 움직이는 예제
 
 You need to prepare an SD card which should be at least 64G 
 User Etcher software to write image (unzip above) to SD card.
 
-나노를 분리한 상태로 건전지의 전원을 충전한다.
+젯봇에서 나노를 분리 시킨다.
+건전지만 먼저 충전한다.
 충전이 완료되면 충전기의 전원을 반드시 뽑는다.
 
-젯봇에서 분리된 상태의 나노를 나노 전원 입력 커넥터로 먼저 킨다.
+아직 합체하지 말고 나노의 전원 입력 커넥터(미니 usb, 휴대폰 충전단자)로 먼저 킨다.
 나노의 초기 아이디, 비밀번호 : jetbot
 와이파이를 연결하고 나노의 전원을 끈다.
-나노 전원 입력 커넥터를 반드시 분리한다.
+나노 전원 입력 커넥터(미니 usb, 휴대폰 충전단자)를 반드시 분리한다.
 
 젯봇을 만든다.
-젯봇의 스위치를 ON으로 만들어서 나노를 다시 킨다.
+젯봇의 스위치를 ON으로 만들어서 나노를 킨다.
 OLED에 IP주소가 나온다.
 
 젯봇의 Public IP를 획득하여
 공유기에서 포트 포워딩 시킨다.
 내부아이피주소 입력, 외부포트 8282
 내부포트 8888
-http://<젯봇의 Public IP>:8282 이렇게 접속 가능하다.
+이제 http://<젯봇의 Public IP>:8282 이렇게 접속 가능하다.
 
 # 기본 젯봇 움직이기 #
-책상에 올려놓지 말고 바닥의 넓은 공간에 내려놓습니다.
-아래 위치로 이동해서 파일을 엽니다.
- ~/Notebooks/basic_motion/
+~/Notebooks/basic_motion/
 basic_motion.ipynb
 
 # 원격 조종 예제 #
@@ -274,7 +225,6 @@ teleoperation.ipynb
 Connect USB adapter to PC
 
 게임패드 설정
-게임패드는 두가지 모드를 지원한다.
 1. PC/PS3/Andorid mode (초기값)
 2. XBox 360 mode. 
 예제는 XBox 360모드로 진행한다.
@@ -301,229 +251,3 @@ live_demo.ipynb
 ~/Notebooks/road_following/
 data-collection.ipynb
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// 3. 패키지와 노드 만들기 //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-3-1-1. 직접 cpp 패키지와 노드 만들기
-https://cafe.naver.com/openrt/3043
-
-cd && mkdir my_cpp_test && cd my_cpp_test && mkdir src && cd src
-	지금부터는 새롭게 패키지를 생성하는 과정이기 때문에 cmakelists등을 수정해야해서
-	새로운 폴더를 만들고 진행해야 한다.
-	다른 예제(Cartographer, ydlidar등..)를 사용했던 폴더에서 따라하면 안된다.
-
-catkin_create_pkg my_cpp_package std_msgs roscpp
-	위 명령어를 수행하면 my_cpp_test/src 아래 my_cpp_package 폴더가 생긴다.
-	my_cpp_package를 만들고 의존하는 패키지로 std_msgs와 roscpp를 추가한다는 뜻
-	std_msgs : ROS의 표준 메시지 패키지
-	roscpp : c/c++을 사용하기 위한 라이브러리
-	catkin_create_pkg my_cpp_package 까지만 입력해서 패키지 생성 후 package.xml 에 직접 입력해도 된다.
-	cd ~/my_cpp_test/src/my_cpp_package 해서 생성된 폴더들을 살펴본다.
-		include : 인클루드 폴더
-		src : 소스코드 폴더
-		CMakeLists.txt : 빌드 설정 파일
-		package.xml : 패키지 설정 파일
-
-
-
-
-
-3-1-2. Publisher(값 보내기)와 Subscriber(값 받기)를 만들기 위한 수정
-
-vi ~/my_cpp_test/src/my_cpp_package/package.xml
-비슷한 내용이 담긴 위치에 아래 내용을 추가한다.
-<build_depend>message_generation</build_depend>
-<exec_depend>message_runtime</exec_depend>
-
-
-vi ~/my_cpp_test/src/my_cpp_package/CMakeList.txt
-# find_package를 아래 와 같이 수정한다. #
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  std_msgs
-  message_generation
-)
-# catkin_package위에 아래 내용을 추가한다. #
-add_message_files(FILES my_msg_setting.msg)
-generate_messages(DEPENDENCIES std_msgs)
-add_executable(my_cpp_publisher src/my_cpp_publisher.cpp)
-target_link_libraries(my_cpp_publisher ${catkin_LIBRARIES})
-add_dependencies(my_cpp_publisher my_cpp_test_package_generate_messages_cpp)
-add_executable(my_cpp_subscriber src/my_cpp_subscriber.cpp)
-target_link_libraries(my_cpp_subscriber ${catkin_LIBRARIES})
-add_dependencies(my_cpp_subscriber my_cpp_test_package_generate_messages_cpp)
-# catkin_package의 주석을 아래와 같이 해제한다. #
-catkin_package(
-  #INCLUDE_DIRS include
-  LIBRARIES my_test_package
-  CATKIN_DEPENDS roscpp std_msgs
-  #DEPENDS system_lib
-)
-# include_directories의 내용을 다음과 같이 수정한다. #
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-)
-	include : include 폴더이다. 빌드 후 헤더가 여기에 담긴다.
-	${catkin_INCLUDE_DIRS} : ROS 기본 헤더 경로
-
-
-
-
-
-3-1-3. CMakeList.txt에서 추가한 add_message_files(FILES my_msg_setting.msg) 옵션
-my_msg_setting.msg를 노드가 사용해야 하기 때문에 빌드할때 포함하란 뜻이다.
-my_msg_setting.msg는 현재는 없으므로 생성해준다.
-cd ~/my_cpp_test/src/my_cpp_package
-mkdir msg && cd msg && vi my_msg_setting.msg
-int32 data
-위의 한줄을 입력하고 저장한다. (int32형으로 data를 선언한다는 뜻)
-
-
-
-
-
-3-1-4. CMakeList.txt add_executable(my_cpp_publisher src/my_cpp_publisher.cpp) 와 add_executable(my_cpp_subscriber src/my_cpp_subscriber.cpp) 옵션
-my_cpp_publisher.cpp를 빌드해서 my_cpp_publisher를 만들라는 뜻이다.
-my_cpp_publisher.cpp, my_cpp_subscriber.cpp는 현재 없으므로 생성해준다.
-
-cd ~/my_cpp_test/src/my_cpp_package/src
-vi my_cpp_publisher.cpp 하고 아래 내용 입력
-#######################################################################################################
-#include "ros/ros.h" // ROS 기본 헤더파일
-#include "my_cpp_package/my_msg_setting.h"
-// my_msg_setting.h는 현재 없는 헤더이다. 3-1-3에서 .msg를 만들어놨으므로 빌드후 생성될 예정이다.
-// 이름은 CMakeLists.txt 에서 추가한 add_message_files(FILES my_msg_setting.msg)과 이름이 같아야 한다.
-
-int main(int argc, char **argv)
-{
-
-  ros::init(argc, argv, "my_publisher_node"); // 노드명 my_publisher_node로 초기화
-  ros::NodeHandle nh; // ROS 시스템과 통신을 위한 노드 핸들을 nh로 선언
-
-  // Publisher 선언
-  // my_cpp_package 패키지의 my_msg_setting.msg파일을 이용한 my_cpp_pub을 선언한다.
-  // Topic명은 "my_package_msg" 이며, 큐(queue) 사이즈를 100개로 설정한다는 뜻이다.
-  ros::Publisher my_cpp_pub = nh.advertise<my_cpp_package::my_msg_setting>("my_package_msg", 100);
-
-
-  // 루프 주기를 설정한다.
-  // 1이니까 1hz, 1초간격으로 반복한다.
-  // 10은 10Hz를 말하는 것으로 약 0.1초 간격으로 반복된다.
-  ros::Rate loop_rate(1);
-
-  int count = 0; // 메시지에 사용될 변수 선언, int 32형
-
-  while (ros::ok())
-  {
-    my_cpp_package::my_msg_setting msg;
-    // my_msg_setting.msg에서 지정한 형식으로 msg를 선언, int32형이다.
-
-    msg.data = count;
-    // count를 msg.data에 저장
-    // 이때 data는 my_package_msg.msg에서 int32 'data' 라고 만들었기 때문에 msg.data에 저장 가능하다.
-    // my_package_msg.msg를 int32 abcd라고 만들었으면 msg.abcd = count; 처럼 쓴다.
-
-    ROS_INFO("send msg = %d", count); // ROS_INFO 라는 ROS 함수를 이용해서 count 변수를 표시해본다.
-    my_cpp_pub.publish(msg); // 메시지를 발행한다.
-
-    loop_rate.sleep(); // 위에서 정한 1hz에 의해서 슬립한다.
-
-    ++count; // count 변수 1씩 증가
-  }
-
-  return 0;
-}
-#######################################################################################################
-
-cd ~/my_cpp_test/src/my_cpp_package/src
-vi my_cpp_subscriber.cpp 하고 아래 내용 입력
-#######################################################################################################
-#include "ros/ros.h"
-#include "my_cpp_package/my_msg_setting.h"
-
-
-// 메시지 콜백함수를 사용자가 직접 만들어본다.
-// 전달 받은 메세지는 my_cpp_publisher.cpp에서 보낸 msg.data = count; 이다.
-void msgCallback(const my_cpp_package::my_msg_setting::ConstPtr& msg)
-{
-  ROS_INFO("recieve msg: %d", msg->data); // msg에서 data를 꺼낸다.
-}
-
-int main(int argc, char **argv) // 노드 메인 함수
-{
-  ros::init(argc, argv, "my_subscriber_node"); // 노드명 my_subscriber_node로 초기화
-  ros::NodeHandle nh;
-
-  // Subscriber 선언
-  // my_cpp_publisher.cpp에서 지정한 Topic명 my_package_msg로부터
-  // 100개의 큐를 msgCallback로 보낸다.
-  ros::Subscriber my_cpp_sub = nh.subscribe("my_package_msg", 100, msgCallback);
-
-  ros::spin(); // 메시지가 수신되면 msgCallback를 실행한다.
-
-  return 0;
-
-}
-#######################################################################################################
-
-
-
-
-
-
-3-1-5. 빌드
-cd ~/my_cpp_test && catkin_make
-echo "source ~/my_cpp_test/devel/setup.bash" >> ~/.bashrc
-source ~/.bashrc
-모든 터미널을 종료한다.
-roscore # 터미널 1 #
-rosrun my_test_package my_msg_publisher # 터미널 2 #
-rosrun my_test_package my_msg_subscriber # 터미널 3 #
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-
-
-
-
-
-
-
-참고
-직접 코딩
-https://github.com/yangfuyuan/ydlidar_sdk
-한글강의
-https://github.com/robotpilot/ros-seminar
-영어 튜토리얼
-http://wiki.ros.org/ROS/Tutorials
-WaveShae 예제
-https://www.waveshare.com/wiki/JetBot_AI_Kit
-네이버 한글 강좌 (오로카)
-https://cafe.naver.com/openrt/2360
-좌표 획득
-https://google-cartographer-ros.readthedocs.io/en/latest/configuration.html
-밸런싱 로봇 만들기
-http://enssionaut.com/xe/board_robotics

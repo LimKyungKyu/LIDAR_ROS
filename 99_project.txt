@@ -1,0 +1,1476 @@
+
+ROS란?
+robot operating system : 로봇용 공개소스 메타 운영체제입니다.
+http://wiki.ros.org/ko/ROS/Introduction
+
+
+
+// 1. 설치  //
+############################################################################################################################
+
+
+1-1. ROS - Melodic 설치
+http://wiki.ros.org/melodic/Installation/Ubuntu
+
+pc가 packages.ros.org로부터 ROS관련 소프트웨어를 받을 수 있도록 설정
+sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+
+다운로드 받는 패키지가 신뢰 할 수 있다는 것을 확인하기 위해 key값을 설정
+sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654
+
+sudo apt-get update
+sudo apt-get install -y liblua5.2-dev libgflags-dev libsuitesparse-dev libgoogle-glog-dev
+sudo apt install ros-melodic-desktop-full
+	오류나는경우
+	sudo apt-get --fix-broken install
+sudo rosdep init
+rosdep update
+	rosdep은 ROS 구동에 필요한 요소를 쉽게 설치하도록 돕는다
+
+echo "source /opt/ros/melodic/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+	이렇게 echo를 사용해 bashrc에 추가하면 터미널이 켜질때마다 /opt/ros/melodic/setup.bash를 수행한다.
+	지금 켠 터미널에만 한번 적용하고, 그 터미널을 껐다가 다시 켰을때는 영향을 안주려면
+	echo를 쓰지말고 바로 source /opt/ros/melodic/setup.bash 하면 된다. # Tag2 #
+	여기선 echo로 추가해놓는것을 권장한다.
+	나중에 cd && sudo vi .bashrc의 맨아랫줄로 가서 echo로 추가한 내용을 지우면 원상태로 돌아온다.
+
+sudo apt-get install python-rosinstall python-rosinstall-generator python-wstool build-essential
+	의존성 패키지 설치 오류가 발생하면 필요 모듈을 아래에서 다운로드 하고 위 명령어를 다시 수행한다.
+	http://repos.ros.org/repos/ros_bootstrap/pool/main/p/python-rospkg-modules/
+	sudo dpkg -i --force-overwrite python-rospkg-modules_1.1.10-1_all.deb
+
+참고 : 헤더파일 위치 : cd /opt/ros/melodic/include
+
+
+############################################################################################################################
+
+
+1-2. Cartographer ROS 설치
+https://google-cartographer-ros.readthedocs.io/en/latest/compilation.html
+
+sudo apt-get install -y python-wstool python-rosdep ninja-build
+mkdir Google_Cartographer && cd Google_Cartographer && wstool init src #Tag1#
+wstool merge -t src https://raw.githubusercontent.com/googlecartographer/cartographer_ros/master/cartographer_ros.rosinstall
+wstool update -t src
+src/cartographer/scripts/install_proto3.sh
+sudo rosdep init
+	Cartographer ROS를 사용해야 하는데 위에서 설치하느라 sudo rosdep init했기때문에 아래와 같은 에러가 나온다.
+	The command ‘sudo rosdep init’ will print an error if you have already executed it since installing ROS. This error can be ignored.
+	해당 위치로 이동해서 파일을 삭제하고 다시 sudo rosdep init한다.
+	sudo rm -rf /etc/ros/rosdep/sources.list.d/20-default.list && sudo rosdep init
+rosdep update
+	오류시 : sudo rosdep fix-permissions 입력하고 다시 rosdep update
+cd ~/Google_Cartographer && sudo rosdep install --from-paths src --ignore-src --rosdistro=${ROS_DISTRO} -y
+	오류시 : #Tag1# 으로 돌아가서 src 폴더 지우고  wstool init src 부터 다시한다.
+catkin_make_isolated --install --use-ninja
+	일반적인 catkin_make와 다르게 catkin_make_isolated로 설치한다.
+
+source devel_isolated/setup.bash
+echo "source ~/Google_Cartographer/devel_isolated/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+
+
+############################################################################################################################
+
+
+1-3. ydlidar X2 설치
+cd && mkdir -p project_black/src && cd project_black/src
+git clone https://github.com/YDLIDAR/ydlidar_ros.git
+cd ydlidar_ros && git checkout X2
+	ydlidar_ros 폴더로 이동후 X2 제품에 해당하는 X2 브랜치로 이동하는 git 명령어
+cd && cd project_black && catkin_make
+
+cd ~/project_black && source devel/setup.bash
+echo "source ~/project_black/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+
+
+############################################################################################################################
+
+
+1-4-1 패키지 생성 
+cd && cd project_black/src && catkin_create_pkg project_ros_cpp std_msgs roscpp rospy tf
+cd && cd project_black/src && catkin_create_pkg project_ros_python std_msgs roscpp rospy tf
+
+
+1-4-2 CMakeLists.txt
+cd && cd project_black/src/project_ros_python && vi CMakeLists.txt
+
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  tf
+  message_generation
+)
+ add_message_files(
+   FILES
+   get_degree.msg
+   nano_control.msg
+ )
+
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+ )
+
+catkin_package(
+#  INCLUDE_DIRS include
+   LIBRARIES project_ros_python
+   CATKIN_DEPENDS roscpp rospy std_msgs tf message_runtime
+#  DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+
+1-4-3 package.xml
+cd && cd project_black/src/project_ros_python && vi package.xml
+<build_depend>message_generation</build_depend>
+<exec_depend>message_runtime</exec_depend>
+
+
+############################################################################################################################
+
+
+1-5. jetbot, waveshare의 모터 드라이버 분리해서 설치하기
+// 파이썬에 드라이버 설치 //
+python3 -m pip install traitlets
+python3 -m pip install Adafruit_MotorHAT
+// 분리할 소스 //
+https://github.com/waveshare/jetbot.git
+cd && mkdir temp_jetbot && cd temp_jetbot
+git clone https://github.com/waveshare/jetbot.git 안에 들어있는 motor.py 와 robot.py를 활용한다.
+
+cd && cd project_black/src/project_ros_python/include && vi motor.py
+///////////////////////////////////////////////////////////////////////////////
+import atexit
+from Adafruit_MotorHAT import Adafruit_MotorHAT
+import traitlets
+from traitlets.config.configurable import Configurable
+
+
+class Motor(Configurable):
+
+    value = traitlets.Float()
+    
+    # config
+    alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    beta = traitlets.Float(default_value=0.0).tag(config=True)
+
+    def __init__(self, driver, channel, *args, **kwargs):
+        super(Motor, self).__init__(*args, **kwargs)  # initializes traitlets
+
+        self._driver = driver
+        self._motor = self._driver.getMotor(channel)
+        atexit.register(self._release)
+        
+    @traitlets.observe('value')
+    def _observe_value(self, change):
+        self._write_value(change['new'])
+
+    def _write_value(self, value):
+        """Sets motor value between [-1, 1]"""
+        mapped_value = int(255.0 * (self.alpha * value + self.beta))
+        speed = min(max(abs(mapped_value), 0), 255)
+        self._motor.setSpeed(speed)
+        if mapped_value < 0:
+            self._motor.run(Adafruit_MotorHAT.FORWARD)
+        else:
+            self._motor.run(Adafruit_MotorHAT.BACKWARD)
+
+    def _release(self):
+        """Stops motor by releasing control"""
+        self._motor.run(Adafruit_MotorHAT.RELEASE)
+///////////////////////////////////////////////////////////////////////////////
+
+
+cd && cd project_black/src/project_ros_python/include && vi robot.py
+///////////////////////////////////////////////////////////////////////////////
+import time
+import traitlets
+from traitlets.config.configurable import SingletonConfigurable
+from Adafruit_MotorHAT import Adafruit_MotorHAT
+from motor import Motor
+
+
+class Robot(SingletonConfigurable):
+    
+    left_motor = traitlets.Instance(Motor)
+    right_motor = traitlets.Instance(Motor)
+
+    # config
+    i2c_bus = traitlets.Integer(default_value=1).tag(config=True)
+    left_motor_channel = traitlets.Integer(default_value=1).tag(config=True)
+    left_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    right_motor_channel = traitlets.Integer(default_value=2).tag(config=True)
+    right_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    
+    def __init__(self, *args, **kwargs):
+        super(Robot, self).__init__(*args, **kwargs)
+        self.motor_driver = Adafruit_MotorHAT(i2c_bus=self.i2c_bus)
+        self.left_motor = Motor(self.motor_driver, channel=self.left_motor_channel, alpha=self.left_motor_alpha)
+        self.right_motor = Motor(self.motor_driver, channel=self.right_motor_channel, alpha=self.right_motor_alpha)
+        
+    def set_motors(self, left_speed, right_speed):
+        self.left_motor.value = left_speed
+        self.right_motor.value = right_speed
+        
+    def forward(self, speed=1.0, duration=None):
+        self.left_motor.value = speed
+        self.right_motor.value = speed
+
+    def backward(self, speed=1.0):
+        self.left_motor.value = -speed
+        self.right_motor.value = -speed
+
+    def left(self, speed=1.0):
+        self.left_motor.value = -speed
+        self.right_motor.value = speed
+
+    def right(self, speed=1.0):
+        self.left_motor.value = speed
+        self.right_motor.value = -speed
+
+    def stop(self):
+        self.left_motor.value = 0
+        self.right_motor.value = 0
+///////////////////////////////////////////////////////////////////////////////
+
+
+############################################################################################################################
+
+
+1.7 IMU(MPU6050) Publish
+참조 : https://github.com/Tijndagamer/mpu6050
+
+각도를 주고받을 .msg 파일 생성
+cd && cd project_black/src/project_ros_python && mkdir msg && cd msg && vi get_degree.msg
+float32 roll
+float32 pitch
+float32 yaw
+float32 imu_time_stamp
+
+토픽명 : project_degree
+
+
+cd && cd project_black/src/project_ros_python/src && vi degree_publisher.py
+///////////////////////////////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+"""
+This program handles the communication over I2C
+between a Raspberry Pi and a MPU-6050 Gyroscope / Accelerometer combo.
+Made by: MrTijn/Tijndagamer
+Released under the MIT License
+Copyright 2015
+"""
+
+
+import rospy
+from project_ros_python.msg import get_degree
+
+import smbus
+import time
+import math
+MY_PI = 3.14159265358979323846
+
+
+
+
+class MPU6050:
+    # Global Variables
+    GRAVITIY_MS2 = 9.80665
+    address = None
+    bus = smbus.SMBus(0) # 사용되는 i2c 번호
+
+    # Scale Modifiers
+    ACCEL_SCALE_MODIFIER_2G = 16384.0
+    ACCEL_SCALE_MODIFIER_4G = 8192.0
+    ACCEL_SCALE_MODIFIER_8G = 4096.0
+    ACCEL_SCALE_MODIFIER_16G = 2048.0
+
+    GYRO_SCALE_MODIFIER_250DEG = 131.0
+    GYRO_SCALE_MODIFIER_500DEG = 65.5
+    GYRO_SCALE_MODIFIER_1000DEG = 32.8
+    GYRO_SCALE_MODIFIER_2000DEG = 16.4
+
+    # Pre-defined ranges
+    ACCEL_RANGE_2G = 0x00
+    ACCEL_RANGE_4G = 0x08
+    ACCEL_RANGE_8G = 0x10
+    ACCEL_RANGE_16G = 0x18
+
+    GYRO_RANGE_250DEG = 0x00
+    GYRO_RANGE_500DEG = 0x08
+    GYRO_RANGE_1000DEG = 0x10
+    GYRO_RANGE_2000DEG = 0x18
+
+    # MPU-6050 Registers
+    PWR_MGMT_1 = 0x6B
+    PWR_MGMT_2 = 0x6C
+
+    SELF_TEST_X = 0x0D
+    SELF_TEST_Y = 0x0E
+    SELF_TEST_Z = 0x0F
+    SELF_TEST_A = 0x10
+
+    ACCEL_XOUT0 = 0x3B
+    ACCEL_XOUT1 = 0x3C
+    ACCEL_YOUT0 = 0x3D
+    ACCEL_YOUT1 = 0x3E
+    ACCEL_ZOUT0 = 0x3F
+    ACCEL_ZOUT1 = 0x40
+
+    TEMP_OUT0 = 0x41
+    TEMP_OUT1 = 0x42
+
+    GYRO_XOUT0 = 0x43
+    GYRO_XOUT1 = 0x44
+
+    GYRO_YOUT0 = 0x45
+    GYRO_YOUT1 = 0x46
+
+    GYRO_ZOUT0 = 0x47
+    GYRO_ZOUT1 = 0x48
+
+    ACCEL_CONFIG = 0x1C
+    GYRO_CONFIG = 0x1B
+
+    def __init__(self, address):
+        self.address = address
+
+        # Wake up the MPU-6050 since it starts in sleep mode
+        self.bus.write_byte_data(self.address, self.PWR_MGMT_1, 0x00)
+
+    # I2C communication methods
+
+    def read_i2c_word(self, register):
+        """Read two i2c registers and combine them.
+        register -- the first register to read from.
+        Returns the combined read results.
+        """
+
+        # Read the data from the registers
+        high = self.bus.read_byte_data(self.address, register)
+        low = self.bus.read_byte_data(self.address, register + 1)
+
+        value = (high << 8) + low
+        if (value >= 0x8000):
+            return -((65535 - value) + 1)
+        else:
+            return value
+
+    # MPU-6050 Methods
+    def get_temp(self):
+        """Reads the temperature from the onboard temperature sensor of the MPU-6050.
+        Returns the temperature in degrees Celcius.
+        """
+        # Get the raw data
+        raw_temp = self.read_i2c_word(self.TEMP_OUT0)
+
+        # Get the actual temperature using the formule given in the
+        # MPU-6050 Register Map and Descriptions revision 4.2, page 30
+        actual_temp = (raw_temp / 340) + 36.53
+
+        # Return the temperature
+        return actual_temp
+
+    def set_accel_range(self, accel_range):
+        """Sets the range of the accelerometer to range.
+        accel_range -- the range to set the accelerometer to. Using a
+        pre-defined range is advised.
+        """
+
+        # First change it to 0x00 to make sure we write the correct value later
+        self.bus.write_byte_data(self.address, self.ACCEL_CONFIG, 0x00)
+
+        # Write the new range to the ACCEL_CONFIG register
+        self.bus.write_byte_data(self.address, self.ACCEL_CONFIG, accel_range)
+
+    def read_accel_range(self, raw = False):
+        """Reads the range the accelerometer is set to.
+        If raw is True, it will return the raw value from the ACCEL_CONFIG
+        register
+        If raw is False, it will return an integer: -1, 2, 4, 8 or 16. When it
+        returns -1 something went wrong.
+        """
+
+        # Get the raw value
+        raw_data = self.bus.read_byte_data(self.address, self.ACCEL_CONFIG)
+
+        if raw is True:
+            return raw_data
+
+        elif raw is False:
+            if raw_data == self.ACCEL_RANGE_2G:
+                return 2
+            elif raw_data == self.ACCEL_RANGE_4G:
+                return 4
+            elif raw_data == self.ACCEL_RANGE_8G:
+                return 8
+            elif raw_data == self.ACCEL_RANGE_16G:
+                return 16
+            else:
+                return -1
+
+    def get_accel_data(self, g = False):
+        """Gets and returns the X, Y and Z values from the accelerometer.
+        If g is True, it will return the data in g
+        If g is False, it will return the data in m/s^2
+        Returns a dictionary with the measurement results.
+        """
+        # Read the data from the MPU-6050
+        x = self.read_i2c_word(self.ACCEL_XOUT0)
+        y = self.read_i2c_word(self.ACCEL_YOUT0)
+        z = self.read_i2c_word(self.ACCEL_ZOUT0)
+
+        accel_scale_modifier = None
+        accel_range = self.read_accel_range(True)
+
+        if accel_range == self.ACCEL_RANGE_2G:
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_2G
+        elif accel_range == self.ACCEL_RANGE_4G:
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_4G
+        elif accel_range == self.ACCEL_RANGE_8G:
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_8G
+        elif accel_range == self.ACCEL_RANGE_16G:
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_16G
+        else:
+            print("Unkown range - accel_scale_modifier set to self.ACCEL_SCALE_MODIFIER_2G")
+            accel_scale_modifier = self.ACCEL_SCALE_MODIFIER_2G
+
+        x = x / accel_scale_modifier
+        y = y / accel_scale_modifier
+        z = z / accel_scale_modifier
+
+        if g is True:
+            return {'x': x, 'y': y, 'z': z}
+        elif g is False:
+            x = x * self.GRAVITIY_MS2
+            y = y * self.GRAVITIY_MS2
+            z = z * self.GRAVITIY_MS2
+            return {'x': x, 'y': y, 'z': z}
+
+    def set_gyro_range(self, gyro_range):
+        """Sets the range of the gyroscope to range.
+        gyro_range -- the range to set the gyroscope to. Using a pre-defined
+        range is advised.
+        """
+
+        # First change it to 0x00 to make sure we write the correct value later
+        self.bus.write_byte_data(self.address, self.GYRO_CONFIG, 0x00)
+
+        # Write the new range to the ACCEL_CONFIG register
+        self.bus.write_byte_data(self.address, self.GYRO_CONFIG, gyro_range)
+
+    def read_gyro_range(self, raw = False):
+        """Reads the range the gyroscope is set to.
+        If raw is True, it will return the raw value from the GYRO_CONFIG
+        register.
+        If raw is False, it will return 250, 500, 1000, 2000 or -1. If the
+        returned value is equal to -1 something went wrong.
+        """
+
+        # Get the raw value
+        raw_data = self.bus.read_byte_data(self.address, self.GYRO_CONFIG)
+
+        if raw is True:
+            return raw_data
+        elif raw is False:
+            if raw_data == self.GYRO_RANGE_250DEG:
+                return 250
+            elif raw_data == self.GYRO_RANGE_500DEG:
+                return 500
+            elif raw_data == self.GYRO_RANGE_1000DEG:
+                return 1000
+            elif raw_data == self.GYRO_RANGE_2000DEG:
+                return 2000
+            else:
+                return -1
+
+    def get_gyro_data(self):
+        """Gets and returns the X, Y and Z values from the gyroscope.
+        Returns the read values in a dictionary.
+        """
+
+        # Read the raw data from the MPU-6050
+        x = self.read_i2c_word(self.GYRO_XOUT0)
+        y = self.read_i2c_word(self.GYRO_YOUT0)
+        z = self.read_i2c_word(self.GYRO_ZOUT0)
+
+        gyro_scale_modifier = None
+        gyro_range = self.read_gyro_range(True)
+
+        if gyro_range == self.GYRO_RANGE_250DEG:
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_250DEG
+        elif gyro_range == self.GYRO_RANGE_500DEG:
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_500DEG
+        elif gyro_range == self.GYRO_RANGE_1000DEG:
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_1000DEG
+        elif gyro_range == self.GYRO_RANGE_2000DEG:
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_2000DEG
+        else:
+            print("Unkown range - gyro_scale_modifier set to self.GYRO_SCALE_MODIFIER_250DEG")
+            gyro_scale_modifier = self.GYRO_SCALE_MODIFIER_250DEG
+
+        x = x / gyro_scale_modifier
+        y = y / gyro_scale_modifier
+        z = z / gyro_scale_modifier
+
+        return {'x': x, 'y': y, 'z': z}
+
+    def get_all_data(self):
+        """Reads and returns all the available data."""
+        temp = get_temp()
+        accel = get_accel_data()
+        gyro = get_gyro_data()
+
+        return [accel, gyro, temp]
+
+
+exp_minus = 0.0
+def init_imu_yaw():
+
+	sensor = MPU6050(0x68)
+	exp_count = 0
+	global exp_minus
+
+	while ( exp_count < 10000 ):
+
+		gyro_data = sensor.get_gyro_data()
+		gy_x = gyro_data['x']
+		gy_y = gyro_data['y']
+		gy_z = gyro_data['z']
+
+		float_gy_z = float(gy_z)
+		exp_minus += float_gy_z
+		exp_count += 1
+
+	exp_minus = exp_minus/10000.0
+
+def get_from_raw():
+	sensor = MPU6050(0x68)
+	for_pub = get_degree()
+
+	stamp_time_start = 0.0
+	stamp_time_end = 0.0
+	dt = 0.0
+
+	global exp_minus
+	yaw = 0.0
+
+	sending_time = time.time()
+
+	while not rospy.is_shutdown():
+		accel_data = sensor.get_accel_data()
+		gyro_data = sensor.get_gyro_data()
+		stamp_time_start = stamp_time_end
+		stamp_time_end = time.time()
+
+		dt = ( stamp_time_end - stamp_time_start )
+
+		if ( stamp_time_start == 0.0 ):
+			dt = 0.0
+
+		ac_x = accel_data['x']
+		ac_y = accel_data['y']
+		ac_z = accel_data['z']
+		gy_x = gyro_data['x']
+		gy_y = gyro_data['y']
+		gy_z = gyro_data['z']
+
+		roll = math.atan2(ac_y, math.sqrt(ac_x*ac_x + ac_z*ac_z))*180.0/MY_PI
+		pitch = math.atan2(ac_x, math.sqrt(ac_y*ac_y + ac_z*ac_z))*180.0/MY_PI
+		float_gy_z = float(gy_z) - exp_minus
+		yaw = (yaw + float_gy_z*dt)%360
+
+		# degree로 전송한다.
+		for_pub.roll = float(roll)
+		for_pub.pitch = float(pitch)
+		for_pub.yaw = float(yaw)
+		for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC))
+
+		#print("%f" % exp_minus)
+		#print("%s" % roll)
+		#print("%s" % pitch)
+		#print("%s" % yaw)
+		#print("%s" % dt)
+		#print("")
+		if ( (time.time()-sending_time) > 0.001 ):
+			pub.publish(for_pub)
+			#print("i send degree yaw %f" % for_pub.yaw)
+			sending_time = time.time()
+	
+
+	
+
+if __name__=='__main__':
+	try:
+		rospy.init_node('project_degree_node', anonymous=True)
+		pub = rospy.Publisher('project_degree', get_degree, queue_size=1)
+		init_imu_yaw()
+		get_from_raw()
+
+	except rospy.ROSInterruptException:
+		pass
+///////////////////////////////////////////////////////////////////////////////
+
+
+CMakeLists.txt 세팅
+cd && cd project_black/src/project_ros_python && vi CMakeLists.txt
+
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  tf
+  message_generation
+)
+# message_generation 추가
+
+ add_message_files(
+   FILES
+   get_degree.msg
+ )
+# get_degree.msg 추가
+
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+ )
+# generate_messages 항목 전체 추가
+
+catkin_package(
+#  INCLUDE_DIRS include
+   LIBRARIES project_ros_python
+   CATKIN_DEPENDS roscpp rospy std_msgs tf message_runtime
+#  DEPENDS system_lib
+)
+# CATKIN_DEPENDS에 message_runtime 추가
+
+package.xml 세팅
+cd && cd project_black/src/project_ros_python && vi package.xml
+<build_depend>message_generation</build_depend>
+<exec_depend>message_runtime</exec_depend>
+
+
+cd && cd project_black/src/project_ros_python/src && chmod +x degree_publisher.py
+cd && cd project_black && catkin_make
+
+
+참고자료
+1. i2c 찾는방법
+sudo i2cdetect -y -r 0
+sudo i2cdetect -y -r 1
+
+2. mpu6050 dmp 연산
+git clone https://github.com/thisisG/MPU6050-I2C-Python-Class.git
+
+3. LSM303DLHC
+http://www.devicemart.co.kr/goods/view?no=1177212
+python3 -m pip install adafruit-circuitpython-lsm303dlh-mag
+
+
+############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 2. 제어  //
+############################################################################################################################
+
+
+2.1 Topic을 Subscribe하여 움직이는 Jetbot nano 드라이버
+
+제어값을 주고받을 .msg 파일 생성
+cd && cd project_black/src/project_ros_python/msg && vi nano_control.msg
+int32 move_message
+
+토픽명 : ros_move_topic
+
+
+cd && cd project_black/src/project_ros_python/src && vi nano_move.py
+///////////////////////////////////////////////////////////////////////////////
+#!/usr/bin/env python3
+
+from robot import Robot
+import time
+import rospy
+from project_ros_python.msg import nano_control
+
+robot = Robot()
+robot.set_motors(0.0, 0.0)
+
+left_now = 0.0
+right_now = 0.0
+left_now_2 = 0.0
+right_now_2 = 0.0
+
+max_speed = 0.2
+# 최대 1.0
+# 1.0 이상으로 올라가므로 주의한다.
+
+def callback(data):
+	global left_now
+	global right_now 
+	move_value = data.move_message
+	rospy.loginfo("I heard from keyboard %d", move_value)
+	
+	if ( move_value == 1 ):
+		# 직진
+		robot.set_motors(max_speed, max_speed)
+		left_now = max_speed
+		right_now = max_speed
+
+	if ( move_value == 2 ):
+		# 좌회전
+		if (left_now >= max_speed):
+			robot.left_motor.value = max_speed - 0.01
+			left_now = max_speed - 0.01
+		elif (left_now <= 0.0):
+			robot.left_motor.value = 0.0
+			left_now = 0.0
+		else:
+			robot.left_motor.value = left_now - 0.01
+			left_now = left_now - 0.01
+
+		if (right_now >= max_speed):
+			robot.right_motor.value = max_speed
+			right_now = max_speed
+		elif (right_now <= 0.0):
+			robot.right_motor.value = 0.0
+			right_now = 0.0
+			robot.right_motor.value = right_now + 0.01
+			right_now = right_now + 0.01
+		else :
+			robot.right_motor.value = right_now + 0.01
+			right_now = right_now + 0.01
+
+	if ( move_value == 3 ):
+		# 우회전
+		if (left_now >= max_speed):
+			robot.left_motor.value = max_speed
+			left_now = max_speed
+		elif (left_now <= 0.0):
+			robot.left_motor.value = 0.0
+			left_now = 0.0
+			robot.left_motor.value = left_now + 0.01
+			left_now = left_now + 0.01
+		else:
+			robot.left_motor.value = left_now + 0.01
+			left_now = left_now + 0.01
+
+		if (right_now >= max_speed):
+			robot.right_motor.value = max_speed - 0.01
+			right_now = max_speed - 0.01
+		elif (right_now <= 0.0):
+			robot.right_motor.value = 0.0
+			right_now = 0.0
+		else:
+			robot.right_motor.value = right_now - 0.01
+			right_now = right_now - 0.01
+
+	if ( move_value == 4 ):
+		# 후진
+		robot.set_motors(-max_speed, -max_speed)
+		left_now = -max_speed
+		right_now = -max_speed
+
+	if ( move_value == 5 ):
+		# 정지
+		robot.set_motors(0.0, 0.0)		
+		left_now = 0.0
+		right_now = 0.0
+
+	if ( move_value == 6 ):
+		# 회전
+		robot.set_motors(0.2, -0.2)		
+		left_now = 0.2
+		right_now = -0.2
+
+def wait_listen():
+	rospy.init_node('move_subscriber_node', anonymous=True)
+	rospy.Subscriber('ros_move_topic', nano_control, callback)
+	time.sleep(0.1)
+	rospy.spin()
+
+if __name__=='__main__':
+	wait_listen()
+///////////////////////////////////////////////////////////////////////////////
+
+CMakeLists.txt 세팅
+cd && cd project_black/src/project_ros_python && vi CMakeLists.txt
+ add_message_files(
+   FILES
+   get_degree.msg
+   nano_control.msg
+ )
+# nano_control.msg 추가
+
+
+cd && cd project_black/src/project_ros_python/src && chmod +x nano_move.py
+cd && cd project_black && catkin_make
+
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/project_black/src/project_ros_python/msg"
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/project_black/src/project_ros_python/include"
+
+
+############################################################################################################################
+
+
+2.2 IMU(MPU6050) 데이터를 Subscribe 하여 움직이는 Jetbot nano 드라이버
+
+cd && cd project_black/src/project_ros_python/src && vi imu_degree_control.py
+///////////////////////////////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+import rospy
+import time
+from project_ros_python.msg import get_degree
+from project_ros_python.msg import nano_control
+
+def callback(data):
+
+	# 0 ~ 360 degree로 전송된다. #
+	yaw = data.yaw
+	if ( yaw > 180.0 ):
+		yaw = yaw-360.0
+
+	rospy.loginfo("I heard dgree yaw %f", yaw)
+
+	if ( yaw > 3.0 ):
+		pub.publish(3) # 우회전
+	elif ( yaw < -3.0 ):
+		pub.publish(2) # 좌회전
+	elif ( yaw < 3.0 and yaw > -3.0 ):
+		pub.publish(1) # 직진
+
+if __name__=='__main__':
+	rospy.init_node('imu_degree_control_node', anonymous=True)
+	rospy.Subscriber('project_degree', get_degree, callback)
+	pub = rospy.Publisher('ros_move_topic', nano_control, queue_size=1)
+	rospy.spin()
+///////////////////////////////////////////////////////////////////////////////
+cd && cd project_black/src/project_ros_python/src && chmod +x imu_degree_control.py
+cd && cd project_black && catkin_make
+
+
+############################################################################################################################
+
+
+2-3. 키보드값을 Subscribe 하여 움직이는 Jetbot nano 드라이버
+
+ANSI코드 활용 : https://godoc.org/github.com/tiborvass/uniline/ansi
+
+cd && cd project_black/src/project_ros_python/src && vi keyboard_control.py
+///////////////////////////////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+import rospy
+import time
+from project_ros_python.msg import nano_control
+import tty, termios, sys
+import re
+
+def getchar():
+
+	fd = sys.stdin.fileno()
+	old_settings = termios.tcgetattr(fd)
+	try:
+		tty.setraw(sys.stdin.fileno())
+		ch = sys.stdin.read(1)
+	finally:
+		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+	return ch
+   
+
+
+def keyboard_order():
+
+	while not rospy.is_shutdown():
+		ch = getchar()
+		temp_ch = ch
+		if (re.findall('[\w]',temp_ch)):
+			print ('You pressed : ',temp_ch,'. that is not arrow.')
+			if ( temp_ch == 'o'):
+				print ('Stop !!!')
+				pub.publish(5)
+			elif ( temp_ch == 'i'):
+				print ('Spin !!!')
+				pub.publish(6)
+		elif (temp_ch == '\x03'):
+			print ('Bye Bye, ByeBye ya')
+			sys.exit(1)
+		else:
+			for i in range(2):
+				ch = getchar()
+				temp_ch = temp_ch + ch
+			if (temp_ch == '\x1b[A'):
+				print ('You pressed up arrow\n')
+				pub.publish(1)
+			elif (temp_ch == '\x1b[D'):
+				print ('You pressed left arrow\n')
+				pub.publish(2)
+			elif (temp_ch == '\x1b[C'):
+				print ('You pressed right arrow\n')
+				pub.publish(3)
+			elif (temp_ch == '\x1b[B'):
+				print ('You pressed down arrow\n')
+				pub.publish(4)
+
+		time.sleep(0.1)
+
+if __name__=='__main__':
+	try:
+		pub = rospy.Publisher('ros_move_topic', nano_control, queue_size=1)
+		rospy.init_node('move_keyboard_node', anonymous=True)
+		keyboard_order()
+
+	except rospy.ROSInterruptException:
+		pass
+///////////////////////////////////////////////////////////////////////////////
+cd && cd project_black/src/project_ros_python/src && chmod +x keyboard_control.py
+cd && cd project_black && catkin_make
+
+
+############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 3. 맵 그리기 //
+############################################################################################################################
+
+
+// 맵 1번 그리고 이전맵과 ORB 또는 SURF로 비교하여 특징점 추출하기 //
+// 카토그래퍼에서 완전 분리됨 //
+// ORB 예제 : https://github.com/gilbutITbook/006939/blob/master/ch14/matching/main.cpp //
+
+cd && cd project_black/src/project_ros_cpp/src && vi draw_map.cpp
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#include "ros/ros.h"
+#include "sensor_msgs/LaserScan.h"
+#include <math.h>
+#include <opencv2/opencv.hpp>
+#include "tf/transform_listener.h"
+#include "project_ros_cpp/get_degree.h"
+#define _USE_MATH_DEFINES
+#include <cstdio>
+#include <iostream>
+#include <unistd.h>
+#include <std_msgs/Float32.h>
+#define RAD2DEG(x) ((x)*180.0/M_PI)
+
+
+using namespace cv;
+using namespace std;
+
+
+#define my_map_enlarge 15
+Mat my_map(40*my_map_enlarge, 40*my_map_enlarge, CV_32FC1, Scalar(0)); // float32형 1채널, 0 = 검은색으로 채운다.
+// 중심 (20, 20), 전체 사이즈 40x40, 15배 확대, 1m = 15px //
+// 매번 측정하고 유사위치에 더해서 맵을 진하게 만들면서 늘려나갈 계획이다.
+
+
+Mat re_map(40*my_map_enlarge, 40*my_map_enlarge, CV_32FC1, Scalar(0)); // 초기화를 위한 맵 변수 선언
+Mat my_map_ch3; // 3채널 확장을 위한 맵 변수 선언
+Mat for_surf_cal_temp; // surf를 위한 공간 선언
+
+
+// 초기 좌표, 좌표계 선언 //
+Point2d my_center(my_map.size().width/2, my_map.size().height/2); // 초기 중심 좌표
+Point2d my_axis_x(my_map.size().width/8,0); // x축 좌표계 (폭의 1/8)
+Point2d my_axis_y(0,my_map.size().height/8); // y축 좌표계 (길이의 1/8)
+Point2d my_axis_x_rotation, my_axis_y_rotation; // IMU 회전 좌표계
+int re_axis_count = 0; // 좌표축 갱신을 위한 선언
+
+
+// 맵 확장을 위한 변수 선언 //
+// 중심 (10,10), 전체 사이즈 20x20, 20배 확대, 1m = 20px //
+#define assist_enlarge 20
+Mat assist_map(20*assist_enlarge, 20*assist_enlarge, CV_32FC1, Scalar(0));
+Point2d assist_center(assist_map.size().width/2, assist_map.size().height/2);
+Point2d assist_axis_x(assist_map.size().width/8,0);
+Point2d assist_axis_y(0,assist_map.size().height/8); 
+Point2d assist_x_rotation, assist_y_rotation;
+
+
+// 좌표 저장공간 선언 //
+Point2d detection; // 유효한 좌표의 저장을 위한 변수 선언
+Point2d assist_detection; // 이하 동일
+
+
+// IMU값을 위한 변수 선언 //
+float get_roll = 0.0;
+float get_pitch = 0.0;
+float get_yaw = 0.0;
+float imu_time_check = 0.0;
+
+
+// IMU에서 각도를 받는 함수 //
+void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
+{
+	// msg에서 data를 꺼낸다.
+	// degree, 즉 0 ~ 360의 값을 준다.
+	get_roll = msg->roll;
+	get_pitch = msg->pitch;
+	get_yaw = msg->yaw;
+	//printf("get degree : %f, %f, %f\n", get_roll, get_pitch, get_yaw);
+	imu_time_check = msg->imu_time_stamp; // 보낸 시점의 시간을 알아낸다.
+}
+
+
+// scan데이터와 IMU의 전송시점 비교를 위한 함수 //
+double scan_time_check = 0.0;
+void check_scan_stamp(const std_msgs::Float32::ConstPtr& msg)
+{
+	scan_time_check = msg->data;
+}
+
+
+// 포인트 회전을 위한 함수 //
+Point2d point_rotation(Point2d a, float b)
+{
+	// float b 는 라디안이 입력되야한다.
+
+	Point2d temp_a(a.x,a.y);
+
+	temp_a.x = a.x*cos(b) - a.y*sin(b);
+	temp_a.y = a.x*sin(b) + a.y*cos(b);
+
+	//std::cout<<temp_a.x<<" "<<temp_a.y<< std::endl;
+	return temp_a;
+}
+
+
+// 좌표축 회전을 위한 함수 //
+void from_IMU_modify_axis()
+{
+	//printf("\nhere? Tag1\n");
+	my_axis_x_rotation = point_rotation(my_axis_x,-get_yaw*(M_PI/180.0))+my_center;
+	my_axis_y_rotation = point_rotation(my_axis_y,get_yaw*(M_PI/180.0));
+	my_axis_y_rotation.y = -my_axis_y_rotation.y;
+	my_axis_y_rotation = my_axis_y_rotation+my_center;
+	line(my_map_ch3, my_center, my_axis_x_rotation, Scalar(0, 0, 1), 2, LINE_AA); // x 빨간색
+	line(my_map_ch3, my_center, my_axis_y_rotation, Scalar(0, 1, 0), 2, LINE_AA); // y 초록색
+	//printf("rotation x,y : (%f, %f)\n",my_axis_x_rotation.x, my_axis_x_rotation.y);
+	//printf("rotation x,y : (%f, %f)\n",my_axis_y_rotation.x, my_axis_y_rotation.y);
+}
+
+
+// 특징점 추출을 위한 함수 //
+void find_homography(Mat for_surf_1, Mat for_surf_2)
+{
+	Mat src1 = for_surf_1;
+	Mat src2 = for_surf_2;
+
+	//printf("\nhere? Tag1\n");
+
+	if (src1.empty() || src2.empty()) {
+		cerr << "Image load failed!" << endl;
+		return;
+	}
+
+	//printf("\nhere? Tag2\n");
+	Ptr<Feature2D> feature = ORB::create();
+
+	vector<KeyPoint> keypoints1, keypoints2;
+	Mat desc1, desc2;
+	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
+	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
+
+	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
+
+	vector<DMatch> matches;
+	matcher->match(desc1, desc2, matches);
+
+	std::sort(matches.begin(), matches.end());
+	vector<DMatch> good_matches(matches.begin(), matches.begin() + 50);
+
+	Mat dst;
+	drawMatches(src1, keypoints1, src2, keypoints2, good_matches, dst,
+		Scalar::all(-1), Scalar::all(-1), vector<char>(),
+		DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+	vector<Point2f> pts1, pts2;
+	for (size_t i = 0; i < good_matches.size(); i++) {
+		pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
+		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
+	}
+
+	moveWindow("dst", 700, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+	namedWindow("dst", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+	imshow("dst", dst);
+	waitKey(1);
+}
+
+
+// 맵 그리는 함수 //
+void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
+{
+	// IMU와 scan데이터의 연동을 위해 timestamp확인 //
+	//printf("scan publish time : %f\n", scan_time_check);
+	//printf("imu publish time : %f\n", imu_time_check);
+
+	float do_or_not = fabs(scan_time_check-imu_time_check);
+	printf("%f\n",do_or_not);
+
+	// imu 데이터를 보낸 시점과 scan 데이터를 보낸 시점이 0.1초 이상 차이가 난다면 값을 무시한다.
+	// 1초 10바퀴 돈다고 가정할때 0.1초면 360도이다.
+	// 즉 imu각도를 받은 시점으로부터 0.1초 뒤에
+	// 실제 각도로 갱신된 scan데이터를 받아서 맵을 그리면
+	// 이전 imu각도에서 현재 scan데이터가 측정한 360도의 데이터로 맵을 그리게 된다.
+
+	// 따라서 scan 데이터가 도착하면 scanCallback함수가 호출되고
+	// scan이 보내진 시점의 시간 정보를
+	// imu가 보내진 시점의 시간 정보와 비교해서
+	// 0.1초 이상이면 값을 버리기로 한다.
+
+	// 실제로 1초에 10바퀴도는지는 알 수 없으나
+	// 잔상이 생기는 이유를 알기 쉽게 설명한것이다.
+
+	if ( do_or_not > 0.01 )
+	{
+		
+	}
+	else
+	{
+
+		// 맵 갱신 //
+		my_map = re_map.clone();
+
+		// ydlidar_node가 발생시킨 scan토픽으로부터 전체 데이터 갯수를 획득 //
+		int count = scan->scan_time / scan->time_increment;
+
+		// my_array는 m_a_count 변수의 값을 보고 조정한다. //
+		// 매번 수가 변하므로 사용 후 파기하고 다시 선언하는것이 좋다. //
+		double my_array[1000][2];
+
+		// 전체 데이터중 유효한 데이터를 찾는 부분 //
+		int m_a_count = 0; // 유효한 거리값 측정 위한 선언
+		for(int i = 0; i < count; i++)
+		{
+			float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+
+			if( degree<180.0 && degree>-180.0 )
+			{
+				if( isinf(scan->ranges[i]) || scan->ranges[i]<0.1 || scan->ranges[i]>8.0 )
+				{
+				// ydlidar의 datasheet 참조 //
+				// 최소 0.1m, 최대 8m의 측정을 보장한다. //
+				// 무한대, 0.1m미만, 8m초과 값을 버린다. //
+				}
+				else
+				{
+					my_array[m_a_count][0] = degree + 180.0 ;
+					my_array[m_a_count][1] = scan->ranges[i];
+
+					// openCV로 line을 생성하기 위한 좌표를 계산하고 확대 시킨다. //
+					detection.x = my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*my_map_enlarge;
+					detection.y = -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*my_map_enlarge;
+					assist_detection.x = my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*assist_enlarge;
+					assist_detection.y = -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*assist_enlarge;
+
+					// 회전한 만큼 반대로 회전 시켜준다. //
+					detection = point_rotation(detection, -get_yaw*(M_PI/180.0));
+					assist_detection = point_rotation(assist_detection, -get_yaw*(M_PI/180.0));
+
+					// 맵의 중심으로 이동시킨다. //
+					detection.x =  my_center.x + detection.x;
+					detection.y =  my_center.y + detection.y;
+					assist_detection.x =  assist_center.x + assist_detection.x;
+					assist_detection.y =  assist_center.y + assist_detection.y;
+
+					// my_map의 my_center로 부터 detection까지 흰색으로(1), 굵기 2, 라인 안티앨리어싱
+					line(my_map, my_center, detection, Scalar(1.0), 2, LINE_AA);
+					line(assist_map, assist_center, assist_detection, Scalar(1.0), 2, LINE_AA);
+
+					// my_map의 detection위치에 반지름 0.5의 검은색 원, 굵기 -1 (채움)
+					circle(my_map, detection, 0.5, Scalar(0.0), 1);
+					circle(assist_map, assist_detection, 0.5, Scalar(0.0), -1);
+					
+					++m_a_count;
+
+					//printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
+					//printf("i use yaw %f\n",get_yaw);
+					//printf("this time m_a_count is %d\n",m_a_count);
+				}
+			}
+		}
+
+		// 특징점 매칭을 위해 Mat 형 변환 //
+		if ( for_surf_cal_temp.total() == 0 )
+		{
+			Mat for_surf;
+			my_map.convertTo(for_surf, CV_8UC1, 255, 0);
+			vector<uchar> for_jpg_buff;
+			vector<int> param = vector<int>(2);
+			param[0]=CV_IMWRITE_JPEG_QUALITY;
+			param[1]=95;
+			imencode(".jpg",for_surf,for_jpg_buff,param);
+			Mat for_surf_cal = imdecode(Mat(for_jpg_buff),CV_LOAD_IMAGE_GRAYSCALE);
+			for_surf_cal_temp = for_surf_cal;
+		}
+		else
+		{
+			Mat for_surf;
+			my_map.convertTo(for_surf, CV_8UC1, 255, 0);
+			vector<uchar> for_jpg_buff;
+			vector<int> param = vector<int>(2);
+			param[0]=CV_IMWRITE_JPEG_QUALITY;
+			param[1]=95;
+			imencode(".jpg",for_surf,for_jpg_buff,param);
+			Mat for_surf_cal = imdecode(Mat(for_jpg_buff),CV_LOAD_IMAGE_GRAYSCALE);
+			find_homography(for_surf_cal,for_surf_cal_temp);
+			for_surf_cal_temp = for_surf_cal;
+		}
+
+
+		// 색이 있는 좌표축을 그리기 위해 원본 맵을 3채널로 확장한다. //
+		Mat in[] = {my_map, my_map, my_map};
+		merge(in, 3, my_map_ch3);
+		// 참고 : convertTo를 사용하여 변환하는 경우 검은색만 나오는 에러 발생 //
+		// my_map.convertTo(my_map_ch3, CV_8UC3, 255.0); //
+
+
+		// 좌표축 갱신 부분 //
+		from_IMU_modify_axis();
+
+		moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+		namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+		imshow("my_map_window", my_map_ch3);
+		waitKey(1);
+
+	}
+}
+
+
+int main(int argc, char **argv)
+{
+
+	ros::init(argc, argv, "draw_map_node"); // ROS 통신을 위한 노드 선언
+	ros::NodeHandle n; // 노드 핸들러 선언
+
+	// 전체 맵 좌표축 x,y 설정 //
+	my_axis_x_rotation = my_axis_x + my_center;
+	my_axis_y_rotation = my_axis_y;
+	my_axis_y_rotation.y = -my_axis_y_rotation.y;
+	my_axis_y_rotation = my_axis_y_rotation + my_center;
+
+	// 보조 맵 좌표축 x,y 설정 //
+	assist_x_rotation = assist_axis_x + assist_center;
+	assist_y_rotation = assist_axis_y;
+	assist_y_rotation.y = -assist_y_rotation.y;
+	assist_y_rotation = assist_y_rotation + assist_center;
+
+
+	ros::Subscriber imu_sub = n.subscribe("project_degree", 1, get_degree_from_imu);
+	// degree_publisher.py에서 보내지는 project_degree 토픽을 읽어서 get_degree_from_imu함수를 실행한다.
+
+	ros::Subscriber ydlidar_sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1, scanCallback);
+	// ydlidar_node에서 보내지는 /scan 토픽을 읽어서 scanCallback함수를 실행한다. //
+	ros::Subscriber scan_time_sub = n.subscribe("scan_pub_time_for_imu", 1, check_scan_stamp);
+	// ydlidar의 scan값과 imu의 동기화를 위해서 함수를 실행한다.
+
+	ros::spin();
+	// spin에 의해서 위의 두 노드가 While처럼 무한 루프로 토픽이 들어올때마다 함수를 실행한다. //
+
+	return 0;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+ydlidar_node.cpp에 아래 헤더 추가 
+#include <std_msgs/Float32.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <time.h>
+
+ros::Publisher scan_pub = nh.advertise<sensor_msgs::LaserScan>("scan", 1000); 아랫줄에 아래 내용을 입력
+	ros::Publisher scan_time_pub = nh.advertise<std_msgs::Float32>("scan_pub_time_for_imu", 1); 
+
+scan_pub.publish(scan_msg); 윗줄에 아래 내용을 입력
+	std_msgs::Float32 scan_time_for_imu;
+	struct timespec spec;
+	clock_gettime(CLOCK_MONOTONIC, &spec); // CLOCK_MONOTONIC : 컴퓨터가 켜진 시점부터 지난 시각
+	float stamp_seconds = spec.tv_sec;
+	float stamp_nanoseconds = spec.tv_nsec;
+	float stamp_sum = stamp_seconds+stamp_nanoseconds/1000000000;	
+	scan_time_for_imu.data = stamp_sum;
+	scan_time_pub.publish(scan_time_for_imu);
+
+cd && cd project_black/src/project_ros_cpp && vi CMakeLists.txt
+find_package(OpenCV REQUIRED)
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  tf
+  message_generation
+)
+
+ add_message_files(
+   FILES
+   get_degree.msg
+   nano_control.msg
+ )
+
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+ )
+
+add_executable(draw_map src/draw_map.cpp)
+target_link_libraries(draw_map ${catkin_LIBRARIES} ${OpenCV_LIBS})
+add_dependencies(draw_map project_ros_cpp_generate_messages_cpp)
+
+catkin_package(
+  #INCLUDE_DIRS include
+  LIBRARIES project_ros_cpp
+  CATKIN_DEPENDS roscpp rospy std_msgs tf message_runtime
+  #DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+
+cd && cd project_black/src/project_ros_cpp && vi package.xml
+<build_depend>message_generation</build_depend>
+<exec_depend>message_runtime</exec_depend>
+
+cd && cd project_balck && catkin_make
+
+
+roscore
+rosrun ydlidar ydlidar_node
+rosrun project_ros_python degree_publisher
+rosrun project_ros_cpp lidar_make_map
+
+// 런치 파일 //
+cd && cd project_black/src/project_ros_cpp && mkdir launch && cd launch && vi draw_launch.launch
+<launch>
+
+  <node pkg="ydlidar" type="ydlidar_node" name="ydlidar_node"/>
+  <node pkg="project_ros_python" type="degree_publisher.py" name="degree_publisher_node"/>
+  <node pkg="project_ros_cpp" type="draw_map" name="draw_map_node" output="screen"/>
+
+</launch>
+
+
+참고
+ydlidar+_node에 ros::Rate rate(20)
+즉 1초에 20hz, 즉 0.05초 간격으로 값을 publish 하도록 코드를 수정해도
+연산이 오래걸리기 때문에 1초에 최대 7~8회정도밖에 publish하지 못한다.
+
+############################################################################################################################
+

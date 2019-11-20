@@ -1,392 +1,47 @@
-// 1. waveshare 젯봇에서 모터 드라이버 분리 시키기 //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-https://github.com/waveshare/jetbot.git
+// IMU //
 
-cd && mkdir temp_jetbot && cd temp_jetbot
-git clone https://github.com/waveshare/jetbot.git
-
-cd && mkdir -p my_control_test/src && cd my_control_test/src
-catkin_create_pkg my_control std_msgs roscpp rospy tf
-cd ~/my_control_test && catkin_make
-
-cd && cd my_control_test/src/my_control/include && vi motor.py
-###############################################################################################################################
-import atexit
-from Adafruit_MotorHAT import Adafruit_MotorHAT
-import traitlets
-from traitlets.config.configurable import Configurable
-
-
-class Motor(Configurable):
-
-    value = traitlets.Float()
-    
-    # config
-    alpha = traitlets.Float(default_value=1.0).tag(config=True)
-    beta = traitlets.Float(default_value=0.0).tag(config=True)
-
-    def __init__(self, driver, channel, *args, **kwargs):
-        super(Motor, self).__init__(*args, **kwargs)  # initializes traitlets
-
-        self._driver = driver
-        self._motor = self._driver.getMotor(channel)
-        atexit.register(self._release)
-        
-    @traitlets.observe('value')
-    def _observe_value(self, change):
-        self._write_value(change['new'])
-
-    def _write_value(self, value):
-        """Sets motor value between [-1, 1]"""
-        mapped_value = int(255.0 * (self.alpha * value + self.beta))
-        speed = min(max(abs(mapped_value), 0), 255)
-        self._motor.setSpeed(speed)
-        if mapped_value < 0:
-            self._motor.run(Adafruit_MotorHAT.FORWARD)
-        else:
-            self._motor.run(Adafruit_MotorHAT.BACKWARD)
-
-    def _release(self):
-        """Stops motor by releasing control"""
-        self._motor.run(Adafruit_MotorHAT.RELEASE)
-
-###############################################################################################################################
-
-
-cd && cd my_control_test/src/my_control/include && vi robot.py
-###############################################################################################################################
-import time
-import traitlets
-from traitlets.config.configurable import SingletonConfigurable
-from Adafruit_MotorHAT import Adafruit_MotorHAT
-from motor import Motor
-
-
-class Robot(SingletonConfigurable):
-    
-    left_motor = traitlets.Instance(Motor)
-    right_motor = traitlets.Instance(Motor)
-
-    # config
-    i2c_bus = traitlets.Integer(default_value=1).tag(config=True)
-    left_motor_channel = traitlets.Integer(default_value=1).tag(config=True)
-    left_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
-    right_motor_channel = traitlets.Integer(default_value=2).tag(config=True)
-    right_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
-    
-    def __init__(self, *args, **kwargs):
-        super(Robot, self).__init__(*args, **kwargs)
-        self.motor_driver = Adafruit_MotorHAT(i2c_bus=self.i2c_bus)
-        self.left_motor = Motor(self.motor_driver, channel=self.left_motor_channel, alpha=self.left_motor_alpha)
-        self.right_motor = Motor(self.motor_driver, channel=self.right_motor_channel, alpha=self.right_motor_alpha)
-        
-    def set_motors(self, left_speed, right_speed):
-        self.left_motor.value = left_speed
-        self.right_motor.value = right_speed
-        
-    def forward(self, speed=1.0, duration=None):
-        self.left_motor.value = speed
-        self.right_motor.value = speed
-
-    def backward(self, speed=1.0):
-        self.left_motor.value = -speed
-        self.right_motor.value = -speed
-
-    def left(self, speed=1.0):
-        self.left_motor.value = -speed
-        self.right_motor.value = speed
-
-    def right(self, speed=1.0):
-        self.left_motor.value = speed
-        self.right_motor.value = -speed
-
-    def stop(self):
-        self.left_motor.value = 0
-        self.right_motor.value = 0
-
-###############################################################################################################################
-
-cd && cd my_control_test/src/my_control/src && vi move.py
-###############################################################################################################################
-#!/usr/bin/env python3
-
-from robot import Robot
-import time # time.sleep(0.5) 을 사용하기 위한 모듈 time을 import한다.
-
-# 방향 조절
-# robot.left
-# robot.right
-# robot.forward
-# robot.backwards
-
-robot = Robot()
-robot.left(speed=0.3) # 왼쪽 모터 최대 속도의 30%로 지정
-robot.left(0.3) # 위와 같은 표현이다.
-time.sleep(0.5) # 0.5초 동안 유지한다.
-robot.stop()
-
-
-# 회전 조절
-robot.set_motors(0.3, 0.6) # 좌 회전
-time.sleep(1.0)
-robot.stop()
-
-# 같은 표현
-robot.left_motor.value = 0.3
-robot.right_motor.value = 0.6
-time.sleep(1.0)
-robot.left_motor.value = 0.0
-robot.right_motor.value = 0.0
-###############################################################################################################################
-
-cd && cd my_control_test/src/my_control/src && chmod +x move.py
-cd && cd my_control_test/src/my_control && vi CMakeLists.txt
-catkin_package(
-#  INCLUDE_DIRS include
-   LIBRARIES my_control
-   CATKIN_DEPENDS rospy std_msgs message_runtime
-#  DEPENDS system_lib
-)
-
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-)
-
-cd ~/my_control_test && catkin_make
-export PYTHONPATH="${PYTHONPATH}:/home/nvidia/my_control_test/src/my_control/include"
-echo "source ~/my_control_test/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
-	오류시 sudo apt-get install python3-pip
-	python3 -m pip install traitlets
-	python3 -m pip install Adafruit_MotorHAT
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// 2. 키보드 입력으로 작동시키기 //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-cd && vi test.py
-python3 -m pip install keyboard
-###############################################################################################################################
-#!/usr/bin/python3
-
-import time
-import keyboard
-while True:
-	try:
-		if keyboard.is_pressed('q'):
-			print('You Pressed q Key!')
-			time.sleep(0.01)
-		else: 
-			pass 
-	except: 
-		break
-###############################################################################################################################
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-// 2-1. 방향키 값 캐치 //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-cd && vi test.py
-python3 -m pip install keyboard
-###############################################################################################################################
-#!/usr/bin/python3
-
-import time
-import keyboard
-while True:
-	try:
-		if keyboard.is_pressed("up arrow"):
-			print('You Pressed Up Key!')
-			robot.set_motors(0.3, 0.6)
-			time.sleep(1.0)
-			robot.stop()
-		else: 
-			pass 
-	except: 
-		break
-###############################################################################################################################
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-// 2-2. 방향키 값 캐치 (저수준 생성) //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-###############################################################################################################################
-#!/usr/bin/python3
-
-import os
-import sys    
-import termios
-import fcntl
-import time
-
-def getch():
-  fd = sys.stdin.fileno()
-
-  oldterm = termios.tcgetattr(fd)
-  newattr = termios.tcgetattr(fd)
-  newattr[3] = newattr[3] & ~termios.ICANON & ~termios.ECHO
-  termios.tcsetattr(fd, termios.TCSANOW, newattr)
-
-  oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
-  fcntl.fcntl(fd, fcntl.F_SETFL, oldflags | os.O_NONBLOCK)
-
-  try:        
-    while 1:            
-      try:
-        c = sys.stdin.read(3)
-        break
-      except IOError: pass
-  finally:
-    termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
-    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
-  return c
-
-while True:
-	hello = getch()
-	if hello == 'i':
-		print("123")
-	elif hello == '\x1b[A':
-		print("ooo")
-	time.sleep(1)
-###############################################################################################################################
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-
-// 2-3. 결과적으로 키보드 입력으로 사용할것 //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-###############################################################################################################################
-#!/usr/bin/python3
-
-import tty, termios, sys
-import re
-
-# ANSI : https://godoc.org/github.com/tiborvass/uniline/ansi
-
-def getchar():
-
-	fd = sys.stdin.fileno()
-	old_settings = termios.tcgetattr(fd)
-	try:
-		tty.setraw(sys.stdin.fileno())
-		ch = sys.stdin.read(1)
-	finally:
-		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-	return ch
-   
-while True:
-	ch = getchar()
-	temp_ch = ch
-	if (re.findall('[\w]',temp_ch)):
-		print ('You pressed keyboard, not arrow', temp_ch)
-	elif (temp_ch == '\x03'):
-		print ('Bye Bye, ByeBye ya')
-		sys.exit(1)
-	else:
-		for i in range(2):
-			ch = getchar()
-			temp_ch = temp_ch + ch
-		if (temp_ch == '\x1b[A'):
-			print ('You pressed up arrow\n')
-
-###############################################################################################################################
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// KEYES-345 이용해서 가속도로 각도 구하기 //
-// 직접 계산
+// Accelerometer를 활용해서 roll, pitch를 정확하게 계산한 사이트
 http://students.iitk.ac.in/roboclub/2017/12/21/Beginners-Guide-to-IMU.html
-roll, pitch를 정확하게 계산한 사이트
+// 참고 : http://wizmoz.blogspot.com/2013/01/simple-accelerometer-data-conversion-to.html?_sm_au_=iVVrPJjs44Sjbntq
 
-http://wizmoz.blogspot.com/2013/01/simple-accelerometer-data-conversion-to.html?_sm_au_=iVVrPJjs44Sjbntq
-그냥 참고용
-
-// yaw값을 구하지 못하는 이유
+// Accelerometer로 구하는 yaw값이 정확하지 않은 이유
 http://mythinkg.blogspot.com/2014/03/mpu-6050-rollpitch.html
+https://stackoverflow.com/questions/11089967/how-to-obtain-only-linear-acceleration-from-accelerometer-using-gyroscope
 
-// 파이썬 코드 (성공)
-https://github.com/Seeed-Studio/Grove_Starter_Kit_for_BBG/blob/master/grove_accelerometer_16g/adxl345.py
+// magnetometer가 있는경우 참고할 자료
+https://pinkwink.kr/1072 
 
-// 필요 패키지
+// imu - ros 토픽 연결 // 
+https://github.com/SiChiTong/autonomous_bicycle/blob/master/src/sensor_imu_publisher.py#L59
+https://github.com/SiChiTong/autonomous_bicycle/blob/master/scripts/imu_to_angles.py
+두개를 참고해서 만든다.
+
+// rviz - imu 시각화 //
+http://wiki.ros.org/rviz_imu_plugin?distro=melodic
+
+// 참고 // 
+https://www.robotshop.com/community/robots/show/autonomous-navigation-mecanum-wheel-robot# // 로봇 만들음
+https://github.com/ranbo0311/Mecanum_robot?utm_source=rb-community&utm_medium=robots&utm_campaign=autonomous-navigation-mecanum-wheel-robot // 로봇 만든거 깃허브
+http://wiki.ros.org/imu_filter_madgwick // imu 연동
+https://answers.ros.org/question/246256/how-to-visualize-imu-data-in-rviz/ // imu 설정시 오류가 나는가에 대한 고찰
+http://wiki.ros.org/rviz_imu_plugin // ROS rviz imu 패키지 
+https://github.com/googlecartographer/cartographer_ros/issues/985 // imu 참고 사이트
+https://mechaworld.tistory.com/11 // 참고, 외발 로봇
+https://m.blog.naver.com/yuninjae1234/220935189584 // 보정
+
+
+
+
+
+// 1. KEYES-345 Accelerometer로 각도 구하기 //
 sudo apt-get install git build-essential python3-dev python-dev
+cd && mkdir temp_adxl345 && cd temp_adxl345
 git clone https://github.com/adafruit/Adafruit_Python_ADXL345.git
 cd Adafruit_Python_ADXL345
 sudo python3 setup.py install
 python3 -m pip install adafruit-adxl345
 python3 -m pip install smbus
-
-https://pinkwink.kr/1072 따라해보기
-https://answers.ros.org/question/246256/how-to-visualize-imu-data-in-rviz/ 살펴보기
-
+https://github.com/Seeed-Studio/Grove_Starter_Kit_for_BBG/blob/master/grove_accelerometer_16g/adxl345.py
 ###############################################################################################################################
 #!/usr/bin/python3
 
@@ -514,32 +169,11 @@ if __name__ == "__main__":
 
 
 
-// imu 토픽 연결 // 
-https://github.com/SiChiTong/autonomous_bicycle/blob/master/src/sensor_imu_publisher.py#L59
-https://github.com/SiChiTong/autonomous_bicycle/blob/master/scripts/imu_to_angles.py
-두개를 참고해서 만든다.
-
-// ROS rviz imu 시각화 //
-http://wiki.ros.org/rviz_imu_plugin?distro=melodic
-
-// 참고 // 
-https://www.robotshop.com/community/robots/show/autonomous-navigation-mecanum-wheel-robot# // 로봇 만들음
-https://github.com/ranbo0311/Mecanum_robot?utm_source=rb-community&utm_medium=robots&utm_campaign=autonomous-navigation-mecanum-wheel-robot // 로봇 만든거 깃허브
-http://wiki.ros.org/imu_filter_madgwick // imu 연동
-https://answers.ros.org/question/246256/how-to-visualize-imu-data-in-rviz/ // imu 설정시 오류가 나는가에 대한 고찰
-http://wiki.ros.org/rviz_imu_plugin // ROS rviz imu 패키지 
-https://github.com/googlecartographer/cartographer_ros/issues/985 // imu 참고 사이트
-https://mechaworld.tistory.com/11 // 참고, 외발 로봇
-https://stackoverflow.com/questions/11089967/how-to-obtain-only-linear-acceleration-from-accelerometer-using-gyroscope // 이중적분 하지 마시오
-https://m.blog.naver.com/yuninjae1234/220935189584 // 보정
 
 
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/// 테스트 ///
+// 2. KEYES-345(IMU) + 카토그래퍼 try_1 (정석) // 
+###############################################################################################################################
 #!/usr/bin/python
-
 import smbus
 import time
 import math
@@ -550,6 +184,7 @@ from tf.broadcaster import TransformBroadcaster
 from sensor_msgs.msg import Imu
 
 bus = smbus.SMBus(1)
+# i2c 번호 = 1 #
 
 # ADXL345 device address
 ADXL345_DEVICE = 0x53
@@ -580,7 +215,6 @@ AXES_DATA           = 0x32
 
 MY_PI = 3.14159265358979323846
 
-####################################################################################################
 class ADXL345:
 
 	address = None
@@ -641,10 +275,7 @@ class ADXL345:
 		z = round(z, 4)
 
 		return {"x": x, "y": y, "z": z}
-####################################################################################################
 
-
-####################################################################################################
 def quaternion_from_euler(ai, aj, ak, axes='sxyz'):
 	"""Return quaternion from Euler angles and axis sequence.
 	ai, aj, ak : Euler's roll, pitch and yaw angles
@@ -713,30 +344,14 @@ def quaternion_from_euler(ai, aj, ak, axes='sxyz'):
 	    quaternion[j] *= -1
 
 	return quaternion
-####################################################################################################
 
-
-
-
-
-
-
-
-
-
-
-####################################################################################################
 if __name__ == "__main__":
 
 
-	###############################
 	# 가속도 센서 세팅 #
 	adxl345 = ADXL345()
 	seq = 0
-	###############################
 
-
-	############################################################################
 	# ROS IMU 전달부 세팅 #
 	static_transform = rospy.get_param('~static_transform', [0, 0, 0, 0, 0, 0])
 	fixed_frame = rospy.get_param('~fixed_frame', "base_footprint")
@@ -751,15 +366,8 @@ if __name__ == "__main__":
 
 	rate = rospy.Rate(1)
 
-	############################################################################
 
 
-
-
-
-
-
-	############################################################################
 	# 무한루프 #
 	while True:
 
@@ -823,87 +431,40 @@ if __name__ == "__main__":
 		pub.publish(imu_msg)
 		seq += 1
 		rate.sleep()
-	############################################################################
-####################################################################################################
+###############################################################################################################################
+tracking_frame = "imu",
+TRAJECTORY_BUILDER_2D.use_imu_data = true
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  tracking_frame = "imu",
-  TRAJECTORY_BUILDER_2D.use_imu_data = true
-
-# x*M_PI/180 = rad
-
-# 6050으로 가속도 구하기 
-# https://www.i2cdevlib.com/forums/topic/25-mpu-6050s-linear-acceleration-is-way-off/
-
+// 2. KEYES-345(IMU) + 카토그래퍼 try_2 (성공) // 
 # flat world #
 https://github.com/googlecartographer/cartographer_turtlebot/blob/master/cartographer_turtlebot/cartographer_turtlebot/flat_world_imu_node_main.cc
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// imu 활용하여 맵 그리기 //
 map_frame = "map", 
 tracking_frame = "imu", 
 published_frame = "base_footprint",
 odom_frame = "odom",
 provide_odom_frame = true,
 TRAJECTORY_BUILDER_2D.use_imu_data = true 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+###############################################################################################################################
 #!/usr/bin/python3
 
 import smbus
@@ -946,7 +507,7 @@ AXES_DATA           = 0x32
 
 MY_PI = 3.14159265358979323846
 
-####################################################################################################
+
 class ADXL345:
 
 	address = None
@@ -1007,10 +568,7 @@ class ADXL345:
 		z = round(z, 4)
 
 		return {"x": x, "y": y, "z": z}
-####################################################################################################
 
-
-####################################################################################################
 def quaternion_from_euler(ai, aj, ak, axes='sxyz'):
 	"""Return quaternion from Euler angles and axis sequence.
 	ai, aj, ak : Euler's roll, pitch and yaw angles
@@ -1079,30 +637,15 @@ def quaternion_from_euler(ai, aj, ak, axes='sxyz'):
 	    quaternion[j] *= -1
 
 	return quaternion
-####################################################################################################
 
 
-
-
-
-
-
-
-
-
-
-####################################################################################################
 if __name__ == "__main__":
 
 
-	###############################
 	# 가속도 센서 세팅 #
 	adxl345 = ADXL345()
 	seq = 0
-	###############################
 
-
-	############################################################################
 	# ROS IMU 전달부 세팅 #
 	static_transform = rospy.get_param('~static_transform', [0, 0, 0, 0, 0, 0])
 	fixed_frame = rospy.get_param('~fixed_frame', "base_footprint")
@@ -1117,15 +660,6 @@ if __name__ == "__main__":
 
 	rate = rospy.Rate(1)
 
-	############################################################################
-
-
-
-
-
-
-
-	############################################################################
 	# 무한루프 #
 	# while true로 하면 control c로 안꺼진다. #
 	while not rospy.is_shutdown():
@@ -1186,6 +720,5 @@ if __name__ == "__main__":
 		pub.publish(imu_msg)
 		seq += 1
 		rate.sleep()
-	############################################################################
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+###############################################################################################################################
 

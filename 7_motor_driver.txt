@@ -1,0 +1,563 @@
+// 1. waveshare jetbot nano 모터 드라이버 분리 시키기 //
+###############################################################################################################################
+
+
+// 파이썬에 드라이버 설치 //
+python3 -m pip install traitlets
+python3 -m pip install Adafruit_MotorHAT
+// 분리할 소스 //
+https://github.com/waveshare/jetbot.git
+cd && mkdir temp_jetbot && cd temp_jetbot
+git clone https://github.com/waveshare/jetbot.git 안에 들어있는
+motor.py 와 robot.py를 활용한다.
+
+cd && mkdir -p my_control_test/src && cd my_control_test/src
+catkin_create_pkg my_control std_msgs roscpp rospy tf
+cd ~/my_control_test && catkin_make
+
+
+cd && cd my_control_test/src/my_control/include && vi motor.py
+///////////////////////////////////////////////////////////////
+import atexit
+from Adafruit_MotorHAT import Adafruit_MotorHAT
+import traitlets
+from traitlets.config.configurable import Configurable
+
+
+class Motor(Configurable):
+
+    value = traitlets.Float()
+    
+    # config
+    alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    beta = traitlets.Float(default_value=0.0).tag(config=True)
+
+    def __init__(self, driver, channel, *args, **kwargs):
+        super(Motor, self).__init__(*args, **kwargs)  # initializes traitlets
+
+        self._driver = driver
+        self._motor = self._driver.getMotor(channel)
+        atexit.register(self._release)
+        
+    @traitlets.observe('value')
+    def _observe_value(self, change):
+        self._write_value(change['new'])
+
+    def _write_value(self, value):
+        """Sets motor value between [-1, 1]"""
+        mapped_value = int(255.0 * (self.alpha * value + self.beta))
+        speed = min(max(abs(mapped_value), 0), 255)
+        self._motor.setSpeed(speed)
+        if mapped_value < 0:
+            self._motor.run(Adafruit_MotorHAT.FORWARD)
+        else:
+            self._motor.run(Adafruit_MotorHAT.BACKWARD)
+
+    def _release(self):
+        """Stops motor by releasing control"""
+        self._motor.run(Adafruit_MotorHAT.RELEASE)
+///////////////////////////////////////////////////////////////
+
+
+cd && cd my_control_test/src/my_control/include && vi robot.py
+///////////////////////////////////////////////////////////////
+import time
+import traitlets
+from traitlets.config.configurable import SingletonConfigurable
+from Adafruit_MotorHAT import Adafruit_MotorHAT
+from motor import Motor
+
+
+class Robot(SingletonConfigurable):
+    
+    left_motor = traitlets.Instance(Motor)
+    right_motor = traitlets.Instance(Motor)
+
+    # config
+    i2c_bus = traitlets.Integer(default_value=1).tag(config=True)
+    left_motor_channel = traitlets.Integer(default_value=1).tag(config=True)
+    left_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    right_motor_channel = traitlets.Integer(default_value=2).tag(config=True)
+    right_motor_alpha = traitlets.Float(default_value=1.0).tag(config=True)
+    
+    def __init__(self, *args, **kwargs):
+        super(Robot, self).__init__(*args, **kwargs)
+        self.motor_driver = Adafruit_MotorHAT(i2c_bus=self.i2c_bus)
+        self.left_motor = Motor(self.motor_driver, channel=self.left_motor_channel, alpha=self.left_motor_alpha)
+        self.right_motor = Motor(self.motor_driver, channel=self.right_motor_channel, alpha=self.right_motor_alpha)
+        
+    def set_motors(self, left_speed, right_speed):
+        self.left_motor.value = left_speed
+        self.right_motor.value = right_speed
+        
+    def forward(self, speed=1.0, duration=None):
+        self.left_motor.value = speed
+        self.right_motor.value = speed
+
+    def backward(self, speed=1.0):
+        self.left_motor.value = -speed
+        self.right_motor.value = -speed
+
+    def left(self, speed=1.0):
+        self.left_motor.value = -speed
+        self.right_motor.value = speed
+
+    def right(self, speed=1.0):
+        self.left_motor.value = speed
+        self.right_motor.value = -speed
+
+    def stop(self):
+        self.left_motor.value = 0
+        self.right_motor.value = 0
+///////////////////////////////////////////////////////////////
+
+
+###############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 2. 예제 만들어보기 //
+###############################################################################################################################
+
+
+cd && cd my_control_test/src/my_control/src && vi move.py
+/////////////////////////////////////////////////////////
+#!/usr/bin/env python3
+
+from robot import Robot
+import time
+
+# 방향 조절
+# robot.left
+# robot.right
+# robot.forward
+# robot.backwards
+
+robot = Robot()
+robot.left(speed=0.3) # 왼쪽 모터 최대 속도의 30%로 지정
+robot.left(0.3) # 위와 같은 표현이다.
+time.sleep(0.5) # 0.5초 동안 유지한다.
+robot.stop()
+
+# 회전 조절
+robot.set_motors(0.3, 0.6) # 좌 회전
+time.sleep(1.0)
+robot.stop()
+
+# 같은 표현
+robot.left_motor.value = 0.3
+robot.right_motor.value = 0.6
+time.sleep(1.0)
+robot.left_motor.value = 0.0
+robot.right_motor.value = 0.0
+/////////////////////////////////////////////////////////
+
+
+cd && cd my_control_test/src/my_control/src && chmod +x move.py
+cd && cd my_control_test/src/my_control && vi CMakeLists.txt
+catkin_package(
+#  INCLUDE_DIRS include
+   LIBRARIES my_control
+   CATKIN_DEPENDS rospy std_msgs message_runtime
+#  DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+
+cd ~/my_control_test && catkin_make
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/my_control_test/src/my_control/include"
+
+
+###############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 3. Topic을 Subscribe하여 움직이는 Jetbot nano 드라이버 //
+###############################################################################################################################
+
+
+제어값을 주고받을 .msg 파일 생성
+cd && cd Project_ROS_nano/src/project_ros_python/msg && vi nano_control.msg
+int32 move_message
+
+토픽명 : ros_move_topic
+
+
+cd && cd Project_ROS_nano/src/project_ros_python/src && vi ROS_move.py
+///////////////////////////////////////////////////////////////
+#!/usr/bin/env python3
+
+from robot import Robot
+import time
+import rospy
+from project_ros_python.msg import nano_control
+
+robot = Robot()
+robot.set_motors(0.0, 0.0)
+
+left_now = 0.0
+right_now = 0.0
+left_now_2 = 0.0
+right_now_2 = 0.0
+
+max_speed = 0.2
+# 최대 1.0
+# 1.0 이상으로 올라가므로 주의한다.
+
+def callback(data):
+	global left_now
+	global right_now 
+	move_value = data.move_message
+	rospy.loginfo("I heard from keyboard %d", move_value)
+	
+	if ( move_value == 1 ):
+		# 직진
+		robot.set_motors(max_speed, max_speed)
+		left_now = max_speed
+		right_now = max_speed
+
+	if ( move_value == 2 ):
+		# 좌회전
+		if (left_now >= max_speed):
+			robot.left_motor.value = max_speed - 0.01
+			left_now = max_speed - 0.01
+		elif (left_now <= 0.0):
+			robot.left_motor.value = 0.0
+			left_now = 0.0
+		else:
+			robot.left_motor.value = left_now - 0.01
+			left_now = left_now - 0.01
+
+		if (right_now >= max_speed):
+			robot.right_motor.value = max_speed
+			right_now = max_speed
+		elif (right_now <= 0.0):
+			robot.right_motor.value = 0.0
+			right_now = 0.0
+			robot.right_motor.value = right_now + 0.01
+			right_now = right_now + 0.01
+		else :
+			robot.right_motor.value = right_now + 0.01
+			right_now = right_now + 0.01
+
+	if ( move_value == 3 ):
+		# 우회전
+		if (left_now >= max_speed):
+			robot.left_motor.value = max_speed
+			left_now = max_speed
+		elif (left_now <= 0.0):
+			robot.left_motor.value = 0.0
+			left_now = 0.0
+			robot.left_motor.value = left_now + 0.01
+			left_now = left_now + 0.01
+		else:
+			robot.left_motor.value = left_now + 0.01
+			left_now = left_now + 0.01
+
+		if (right_now >= max_speed):
+			robot.right_motor.value = max_speed - 0.01
+			right_now = max_speed - 0.01
+		elif (right_now <= 0.0):
+			robot.right_motor.value = 0.0
+			right_now = 0.0
+		else:
+			robot.right_motor.value = right_now - 0.01
+			right_now = right_now - 0.01
+
+	if ( move_value == 4 ):
+		# 후진
+		robot.set_motors(-max_speed, -max_speed)
+		left_now = -max_speed
+		right_now = -max_speed
+
+	if ( move_value == 5 ):
+		# 정지
+		robot.set_motors(0.0, 0.0)		
+		left_now = 0.0
+		right_now = 0.0
+
+	if ( move_value == 6 ):
+		# 회전
+		robot.set_motors(0.2, -0.2)		
+		left_now = 0.2
+		right_now = -0.2
+
+def wait_listen():
+	rospy.init_node('move_subscriber_node', anonymous=True)
+	rospy.Subscriber('ros_move_topic', nano_control, callback)
+	time.sleep(0.1)
+	rospy.spin()
+
+if __name__=='__main__':
+	wait_listen()
+///////////////////////////////////////////////////////////////
+CMakeLists.txt 세팅
+cd && cd Project_ROS_nano/src/project_ros_python && vi CMakeLists.txt
+ add_message_files(
+   FILES
+   nano_control.msg
+ )
+# nano_control.msg 추가
+
+cd && cd Project_ROS_nano/src/project_ros_python/src && chmod +x ROS_move.py
+cd && cd Project_ROS_nano && catkin_make
+
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/Project_ROS_nano/src/project_ros_python/msg"
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/Project_ROS_nano/src/project_ros_python/include"
+
+
+###############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 4. IMU(MPU6050) 데이터를 Subscribe 하여 움직이는 Jetbot nano 드라이버 //
+############################################################################################################################
+
+
+cd && cd project_black/src/project_ros_python/src && vi imu_degree_control.py
+///////////////////////////////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+import rospy
+import time
+from project_ros_python.msg import get_degree
+from project_ros_python.msg import nano_control
+
+def callback(data):
+
+	# 0 ~ 360 degree로 전송된다. #
+	yaw = data.yaw
+	if ( yaw > 180.0 ):
+		yaw = yaw-360.0
+
+	rospy.loginfo("I heard dgree yaw %f", yaw)
+
+	if ( yaw > 3.0 ):
+		pub.publish(3) # 우회전
+	elif ( yaw < -3.0 ):
+		pub.publish(2) # 좌회전
+	elif ( yaw < 3.0 and yaw > -3.0 ):
+		pub.publish(1) # 직진
+
+if __name__=='__main__':
+	rospy.init_node('imu_degree_control_node', anonymous=True)
+	rospy.Subscriber('project_degree', get_degree, callback)
+	pub = rospy.Publisher('ros_move_topic', nano_control, queue_size=1)
+	rospy.spin()
+///////////////////////////////////////////////////////////////////////////////
+cd && cd project_black/src/project_ros_python && vi CMakeLists.txt
+ add_message_files(
+   FILES
+   nano_control.msg
+   get_degree.msg
+ )
+# get_degree.msg 추가 (imu 데이터를 publish할때 사용한 msg파일.)
+
+cd && cd project_black/src/project_ros_python/src && chmod +x imu_degree_control.py
+cd && cd project_black && catkin_make
+
+
+############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 5. 키보드값을 Subscribe 하여 움직이는 Jetbot nano 드라이버 //
+############################################################################################################################
+
+ANSI코드 활용 : https://godoc.org/github.com/tiborvass/uniline/ansi
+
+cd && cd Project_ROS_nano/src/project_ros_python/src && vi keyboard_control.py
+///////////////////////////////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+import rospy
+import time
+from project_ros_python.msg import nano_control
+import tty, termios, sys
+import re
+
+def getchar():
+
+	fd = sys.stdin.fileno()
+	old_settings = termios.tcgetattr(fd)
+	try:
+		tty.setraw(sys.stdin.fileno())
+		ch = sys.stdin.read(1)
+	finally:
+		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+	return ch
+   
+
+
+def keyboard_order():
+
+	while not rospy.is_shutdown():
+		ch = getchar()
+		temp_ch = ch
+		if (re.findall('[\w]',temp_ch)):
+			print ('You pressed : ',temp_ch,'. that is not arrow.')
+			if ( temp_ch == 'o'):
+				print ('Stop !!!')
+				pub.publish(5)
+			elif ( temp_ch == 'i'):
+				print ('Spin !!!')
+				pub.publish(6)
+		elif (temp_ch == '\x03'):
+			print ('Bye Bye, ByeBye ya')
+			sys.exit(1)
+		else:
+			for i in range(2):
+				ch = getchar()
+				temp_ch = temp_ch + ch
+			if (temp_ch == '\x1b[A'):
+				print ('You pressed up arrow\n')
+				pub.publish(1)
+			elif (temp_ch == '\x1b[D'):
+				print ('You pressed left arrow\n')
+				pub.publish(2)
+			elif (temp_ch == '\x1b[C'):
+				print ('You pressed right arrow\n')
+				pub.publish(3)
+			elif (temp_ch == '\x1b[B'):
+				print ('You pressed down arrow\n')
+				pub.publish(4)
+
+		time.sleep(0.1)
+
+if __name__=='__main__':
+	try:
+		pub = rospy.Publisher('ros_move_topic', nano_control, queue_size=1)
+		rospy.init_node('move_keyboard_node', anonymous=True)
+		keyboard_order()
+
+	except rospy.ROSInterruptException:
+		pass
+///////////////////////////////////////////////////////////////////////////////
+cd && cd Project_ROS_nano/src/project_ros_python/src && chmod +x keyboard_control.py
+cd && cd Project_ROS_nano && catkin_make
+
+
+############################################################################################################################

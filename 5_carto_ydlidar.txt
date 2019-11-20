@@ -1,0 +1,358 @@
+// 1. Cartographer 좌표 + ydlidar로 맵 그리기 //
+########################################################################################################################
+vi ~/carto_with_yd/src/my_tf_test/src/my_tf_test_map.cpp
+#include "ros/ros.h"
+#include "sensor_msgs/LaserScan.h"
+#include <math.h>
+#include <opencv2/opencv.hpp>
+#include "tf/transform_listener.h"
+#define _USE_MATH_DEFINES
+#include <cstdio>
+#define RAD2DEG(x) ((x)*180./M_PI)
+
+using namespace cv;
+
+// 초기 맵 세팅
+// 중심 (0,0) (가로10, 세로10) (최대측정거리 10)
+// enlarge : 확대 시킨다. ( 30배 )
+// padding : 확대 후 매트릭스의 여백 설정 ( 10 입력하면 상하좌우 10씩 늘어난다. )
+// 1픽셀 = 1m, 30배 확대햇으면 30픽셀 = 1m 이다.
+
+#define enlarge 30
+#define padding 0
+Mat my_map(20*enlarge+(padding*2), 20*enlarge+(padding*2), CV_64FC3, Scalar(0));
+Mat re_create_map(20*enlarge+(padding*2), 20*enlarge+(padding*2), CV_64FC3, Scalar(0));
+Mat temp_my_map;
+
+
+// 초기 좌표계
+Point2d my_center(my_map.size().width/2, my_map.size().height/2);
+Point2d my_axis_x(my_map.size().width/8,0);
+Point2d my_axis_y(0,my_map.size().height/8);
+Point2d my_axis_x_rotation, my_axis_y_rotation;
+
+// 발견한 거리
+Point2d detection;
+
+int re_map=0; // 맵을 갱신시키기 위한 카운트
+int re_axis=0; // 좌표계 갱신시키기 위한 카운트
+
+// 포인트 회전을 위한 함수 
+Point2d point_rotation(Point2d a, double b)
+{
+	Point2d temp_a(a.x,a.y);
+
+	temp_a.x = a.x*cos(b) - a.y*sin(b);
+	temp_a.y = a.x*sin(b) + a.y*cos(b);
+
+	std::cout<<temp_a.x<<" "<<temp_a.y<< std::endl;
+	return temp_a;
+}
+
+
+void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
+{
+// 좌표 획득 부분 //
+
+	std::string start = std::string("/odom"); 
+	std::string move = std::string("/base_footprint");
+
+	tf::TransformListener tfl;
+	tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
+
+	tf::StampedTransform for_get_coordinate;
+	tfl.lookupTransform(start, move, ros::Time(), for_get_coordinate);
+
+	double roll, pitch, yaw;
+	for_get_coordinate.getBasis().getRPY(roll, pitch, yaw);
+	tf::Quaternion q = for_get_coordinate.getRotation();
+	tf::Vector3 Coordinate_3D = for_get_coordinate.getOrigin();
+
+	//std::cout<<"시작 점으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
+	//std::cout<<"	("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
+	//std::cout<<"축 회전 각 [degree] (roll, pitch, yaw)"<<std::endl;
+	
+	std::cout<<"	("<<roll*180./M_PI<<", "<<pitch*180./M_PI<<", "<<yaw*180./M_PI<<")"<< std::endl;
+	std::cout<<roll<<" "<<pitch<<" "<<yaw<<std::endl;
+
+	// 맵 데이터 획득은 50번 마다 갱신 //
+	if(re_map<50)
+	{
+	}
+	else
+	{
+		my_map = re_create_map.clone();
+		re_map = 0;
+	}
+
+
+	// 맵 데이터 획득부분//
+	int count = scan->scan_time / scan->time_increment;
+
+	double my_array[1000][2];
+	// count값의 최대치를 대략적으로 찍어보고 1000개에서 숫자를 조정한다.
+	// 매번 -180에서 180사이에 if를 거쳤을때 저장될 값이 변하므로 넉넉하게 잡는다.
+
+	int m_a_count = 0;
+	for(int i = 0; i < count; i++)
+	{
+		float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+		if(degree > -180 && degree< 180)
+		{
+			if(isinf(scan->ranges[i])||scan->ranges[i]<0.1||scan->ranges[i]>10) // 0.1 이하거나 10이상이면 버린다.
+			{
+			}
+			else
+			{
+				//printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
+				//std::cout<<roll*180./M_PI<<", "<<pitch*180./M_PI<<", "<<yaw*180./M_PI<< std::endl;
+				my_array[m_a_count][0] = degree;
+				my_array[m_a_count][1] = scan->ranges[i];
+
+				detection.x =  my_center.x + my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*enlarge;
+				detection.y =  my_center.y + -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*enlarge;
+
+				circle(my_map, detection, 3, Scalar(0), 1);
+				// my_map의 detection위치에 반지름 3의 검은색 원
+
+				line(my_map, my_center, detection, Scalar(255,255,255), 2);
+				// my_map의 my_center부터 detection까지 흰색으로 굵기 2 라인
+				
+				++m_a_count; 
+			}
+		}
+	}
+
+	temp_my_map = my_map.clone();
+
+	// 좌표축은 5번 마다 갱신 //
+	if(re_axis<5)
+	{
+		line(temp_my_map, my_center, my_axis_x_rotation, Scalar(0, 0, 255), 2); // x 빨간색
+		line(temp_my_map, my_center, my_axis_y_rotation, Scalar(0, 255, 0), 2); // y 초록색
+	}
+	else
+	{
+		my_axis_x_rotation = point_rotation(my_axis_x,-yaw)+my_center;
+		my_axis_y_rotation = point_rotation(my_axis_y,yaw);
+		my_axis_y_rotation.y = -my_axis_y_rotation.y;
+		my_axis_y_rotation = my_axis_y_rotation+my_center;
+		line(temp_my_map, my_center, my_axis_x_rotation, Scalar(0, 0, 255), 2); // x 빨간색
+		line(temp_my_map, my_center, my_axis_y_rotation, Scalar(0, 255, 0), 2); // y 초록색
+		re_axis = 0;
+	}
+	moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+	namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+	imshow("my_map_window", temp_my_map);
+	waitKey(1);
+
+	++re_map;
+	++re_axis;
+}
+
+int main(int argc, char **argv)
+{
+	// 초기 좌표축 x,y 설정 //
+	my_axis_x_rotation = my_axis_x + my_center;
+	my_axis_y_rotation = my_axis_y;
+	my_axis_y_rotation.y = -my_axis_y_rotation.y;
+	my_axis_y_rotation = my_axis_y_rotation + my_center;
+
+	ros::init(argc, argv, "ydlidar_client");
+	ros::NodeHandle n;
+	ros::Subscriber sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1000, scanCallback);
+	ros::spin();
+	return 0;
+}
+########################################################################################################################
+cd ~/carto_with_yd/src/my_tf_test && vi CMakeLists.txt
+아래 내용으로 수정한다.
+
+cmake_minimum_required(VERSION 2.8.3)
+project(my_tf_test)
+
+find_package(OpenCV REQUIRED)
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  tf
+)
+
+catkin_package(
+#  INCLUDE_DIRS include
+#  LIBRARIES my_tf_test
+#  CATKIN_DEPENDS roscpp rospy tf
+#  DEPENDS system_lib
+)
+
+include_directories(
+# include
+  ${catkin_INCLUDE_DIRS}
+)
+
+
+add_executable(my_tf_test src/my_tf_test.cpp)
+target_link_libraries(my_tf_test ${catkin_LIBRARIES})
+add_executable(my_tf_test_map src/my_tf_test_map.cpp)
+target_link_libraries(my_tf_test_map
+   ${catkin_LIBRARIES}
+   ${OpenCV_LIBS}
+ )
+
+
+cd ~/carto_with_yd && catkin_make
+roslaunch carto_mapper mapper.launch
+rosrun my_tf_test my_tf_test_map
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+참고
+http://wiki.ros.org/rosserial_arduino/Tutorials/Time%20and%20TF
+  26   t.header.frame_id = odom;
+  27   t.child_frame_id = base_link;
+https://github.com/googlecartographer/cartographer_ros/issues/1032
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 2. Mat 회전에 관한 알고리즘 // 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#include "ros/ros.h"
+#include "sensor_msgs/LaserScan.h"
+#define RAD2DEG(x) ((x)*180./M_PI)
+#include <math.h>
+#include <opencv2/opencv.hpp>
+#include "hough.hpp"
+
+using namespace cv;
+
+// ?? ??? ??? ???.
+#define enlarge 30
+
+Mat my_map(20*enlarge, 20*enlarge, CV_8UC1, Scalar(0));
+int re_map=0;
+
+void max_object(Mat img, Rect &rect ) 
+{
+	vector<vector<Point>> contours;
+	findContours(img.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);	// ¿Ü°û\u0152± °ËÃâ
+	
+	int max_area = 0 ;
+	for (int i = 0; i < (int)contours.size(); i++)	// °¡Àå Å« ¿µ¿ª °¡Á®¿À±â
+	{
+		Rect r = boundingRect(contours[i]);			// ¿Ü°û\u0152± ¿µ¿ª Æ÷ÇÔ »ç°¢Çü
+		if (max_area < r.area()) {
+			max_area = r.area();
+			rect = r;
+		}
+	}
+	rect = rect - Point(10, 10) + Size(20, 20);
+}
+
+void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
+{
+	int count = scan->scan_time / scan->time_increment;
+	double my_array[1000][2]; // count?? ???? ????? ???? 1000??? ??? ????.
+
+	int m_a_count = 0;
+	for(int i = 0; i < count; i++)
+	{
+		float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+		if(degree > -180 && degree< 180)
+		{
+			if(isinf(scan->ranges[i])||scan->ranges[i]<0.1||scan->ranges[i]>10)
+			{
+			}
+			else
+			{
+				printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
+				my_array[m_a_count][0] = degree;
+				my_array[m_a_count][1] = scan->ranges[i];
+				++m_a_count; 
+			}
+		}
+	}
+
+	if(re_map<50)
+	{
+	}
+	else
+	{
+		std::cout<< "hello" << std::endl;
+		Mat re_create_map(20*enlarge, 20*enlarge, CV_8UC1, Scalar(0));
+		std::cout<< "hello2" << std::endl;
+		my_map = re_create_map;
+		std::cout<< "hello3" << std::endl;
+		re_map = 0;
+	}
+	
+	Point2d my_center(my_map.size().width/2, my_map.size().height/2); // Tag1 //
+	Point2d detection;
+	for(int i = 0; i < m_a_count; i++)
+	{
+		std::cout<<"angle : "<<my_array[i][0]<<", distance : "<< my_array[i][1] << std::endl;
+		detection.x =  my_center.x + my_array[i][1]*cos(my_array[i][0]*CV_PI/180.0)*enlarge*5;
+		detection.y =  my_center.y + -my_array[i][1]*sin(my_array[i][0]*CV_PI/180.0)*enlarge*5;
+		circle(my_map, detection, 3, Scalar(0), 1);
+		line(my_map, my_center, detection, Scalar(255), 3);
+	}
+	++re_map;
+	moveWindow("my_map_window", 100, 100); // (+x -y)
+	namedWindow("my_map_window", WINDOW_AUTOSIZE);
+	imshow("my_map_window", my_map);
+
+
+	Rect rect;
+	Mat gray, canny, morph, th_gray, canny_line, dst;
+	double rho = 1, theta = CV_PI / 180;	
+	vector<Vec2f> lines;	
+
+	Mat image = my_map;
+	CV_Assert(image.data);
+
+	//cvtColor(image, gray, CV_BGR2GRAY);
+	threshold(image, th_gray, 240, 255, THRESH_BINARY);
+	erode(th_gray, morph, Mat(), Point(-1, -1), 2);
+
+	max_object(morph, rect);
+	rectangle(morph, rect, Scalar(100), 2);	
+
+	Canny(th_gray(rect), canny, 40, 100);
+	houghLines(canny, lines, rho, theta, 50);
+	draw_houghLines(canny, canny_line, lines, 1);
+
+	double angle = (CV_PI - lines[0][1]) * 180 / CV_PI  ;
+	Point  center = image.size() / 2;
+	Mat rot_map = getRotationMatrix2D(center, -angle, 1);
+	
+	warpAffine(image, dst, rot_map, image.size(), INTER_LINEAR);
+	imshow("morph", morph);
+	imshow("image", image);
+	imshow("line", canny_line);
+	imshow("dst", dst);
+	waitKey(1);
+	std::cout<< count << std::endl;
+}
+
+int main(int argc, char **argv)
+{
+	ros::init(argc, argv, "ydlidar_client");
+	ros::NodeHandle n;
+	ros::Subscriber sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1000, scanCallback);
+	moveWindow("morph", 500, 100); 
+	moveWindow("image", 500, 100); 
+	moveWindow("line", 500, 100); 
+	moveWindow("dst", 500, 100); 
+	ros::spin();
+	return 0;
+}
