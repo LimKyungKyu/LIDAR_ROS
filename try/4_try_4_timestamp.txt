@@ -48,7 +48,6 @@ Point2d assist_center(assist_map.size().width/2, assist_map.size().height/2);
 Point2d assist_axis_x(assist_map.size().width/8,0);
 Point2d assist_axis_y(0,assist_map.size().height/8); 
 Point2d assist_x_rotation, assist_y_rotation;
-Point2d assist_detection;
 
 
 // 데이터 저장공간 선언 //
@@ -60,6 +59,7 @@ Point2d assist_detection; // 이하 동일
 float get_roll = 0.0;
 float get_pitch = 0.0;
 float get_yaw = 0.0;
+float momentary_yaw = 0.0;
 float imu_time_check = 0.0;
 
 
@@ -103,8 +103,8 @@ Point2d point_rotation(Point2d a, float b)
 void from_IMU_modify_axis()
 {
 	//printf("\nhere? Tag1\n");
-	my_axis_x_rotation = point_rotation(my_axis_x,-get_yaw*(M_PI/180.0))+my_center;
-	my_axis_y_rotation = point_rotation(my_axis_y,get_yaw*(M_PI/180.0));
+	my_axis_x_rotation = point_rotation(my_axis_x,-momentary_yaw*(M_PI/180.0))+my_center;
+	my_axis_y_rotation = point_rotation(my_axis_y,momentary_yaw*(M_PI/180.0));
 	my_axis_y_rotation.y = -my_axis_y_rotation.y;
 	my_axis_y_rotation = my_axis_y_rotation+my_center;
 	line(my_map_ch3, my_center, my_axis_x_rotation, Scalar(0, 0, 1), 2, LINE_AA); // x 빨간색
@@ -160,7 +160,6 @@ void find_homography(Mat for_surf_1, Mat for_surf_2)
 	waitKey(1);
 }
 
-
 // 맵 그리는 함수 //
 void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 {
@@ -168,8 +167,35 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 	//printf("scan publish time : %f\n", scan_time_check);
 	//printf("imu publish time : %f\n", imu_time_check);
 
-	float do_or_not = fabs(scan_time_check-imu_time_check);
-	printf("%f\n",do_or_not);
+	float do_or_not = 1.0;
+	sensor_msgs::LaserScan momentary_scan;
+
+	if ( imu_time_check > scan_time_check )
+	{
+		// imu_time_check의 시간이 될때까지 
+		// scan_time_check의 갱신을 여러번 받으며 기다리고싶지만
+		// scan_time_check의 갱신 속도는 너무 느리다.
+		// 따라서 아무것도 하지 않는다.
+	}
+	else
+	{
+		float temp_time = scan_time_check;
+		momentary_scan = *scan;
+		do_or_not = fabs(temp_time-imu_time_check);
+		int d_o_n_count = 0;
+		while ( do_or_not>0.05 )
+		{
+			do_or_not = fabs(temp_time-imu_time_check);
+			momentary_yaw = get_yaw;
+			printf("%f\n",do_or_not);
+			++d_o_n_count;
+			if (d_o_n_count>100)
+			{
+				printf("yeeeees\n");
+				break;
+			}
+		}
+	}
 
 	// imu 데이터를 보낸 시점과 scan 데이터를 보낸 시점이 0.1초 이상 차이가 난다면 값을 무시한다.
 	// 1초 10바퀴 돈다고 가정할때 0.1초면 360도이다.
@@ -185,7 +211,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 	// 실제로 1초에 10바퀴도는지는 알 수 없으나
 	// 잔상이 생기는 이유를 알기 쉽게 설명한것이다.
 
-	if ( do_or_not > 0.1 )
+	if ( do_or_not > 0.05 )
 	{
 	}
 	else
@@ -195,7 +221,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 		my_map = re_map.clone();
 
 		// ydlidar_node가 발생시킨 scan토픽으로부터 전체 데이터 갯수를 획득 //
-		int count = scan->scan_time / scan->time_increment;
+		int count = momentary_scan.scan_time / momentary_scan.time_increment;
 
 		// my_array는 m_a_count 변수의 값을 보고 조정한다. //
 		// 매번 수가 변하므로 사용 후 파기하고 다시 선언하는것이 좋다. //
@@ -205,11 +231,11 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 		int m_a_count = 0; // 유효한 거리값 측정 위한 선언
 		for(int i = 0; i < count; i++)
 		{
-			float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+			float degree = RAD2DEG(momentary_scan.angle_min + momentary_scan.angle_increment * i);
 
 			if( degree<180.0 && degree>-180.0 )
 			{
-				if( isinf(scan->ranges[i]) || scan->ranges[i]<0.1 || scan->ranges[i]>8.0 )
+				if( isinf(momentary_scan.ranges[i]) || momentary_scan.ranges[i]<0.1 || momentary_scan.ranges[i]>8.0 )
 				{
 				// ydlidar의 datasheet 참조 //
 				// 최소 0.1m, 최대 8m의 측정을 보장한다. //
@@ -218,7 +244,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 				else
 				{
 					my_array[m_a_count][0] = degree + 180.0 ;
-					my_array[m_a_count][1] = scan->ranges[i];
+					my_array[m_a_count][1] = momentary_scan.ranges[i];
 
 					// openCV로 line을 생성하기 위한 좌표를 계산하고 확대 시킨다. //
 					detection.x = my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*my_map_enlarge;
@@ -227,8 +253,8 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 					assist_detection.y = -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*assist_enlarge;
 
 					// 회전한 만큼 반대로 회전 시켜준다. //
-					detection = point_rotation(detection, -get_yaw*(M_PI/180.0));
-					assist_detection = point_rotation(assist_detection, -get_yaw*(M_PI/180.0));
+					detection = point_rotation(detection, -momentary_yaw*(M_PI/180.0));
+					assist_detection = point_rotation(assist_detection, -momentary_yaw*(M_PI/180.0));
 
 					// 맵의 중심으로 이동시킨다. //
 					detection.x =  my_center.x + detection.x;
@@ -246,8 +272,8 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 					
 					++m_a_count;
 
-					//printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
-					//printf("i use yaw %f\n",get_yaw);
+					//printf("angle, distance : [%.3f, %.3f]\n", degree, momentary_scan.ranges[i]);
+					//printf("i use yaw %f\n", momentary_yaw);
 					//printf("this time m_a_count is %d\n",m_a_count);
 				}
 			}
