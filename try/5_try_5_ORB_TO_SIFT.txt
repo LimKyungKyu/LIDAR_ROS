@@ -199,10 +199,10 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 				my_array[m_a_count][1] = scan->ranges[i];
 				//printf("check 1\n");
 				// openCV로 line을 생성하기 위한 좌표를 계산하고 확대 시킨다. //
-				detection.x = my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*my_map_enlarge;
-				detection.y = -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*my_map_enlarge;
-				assist_detection.x = my_array[i][1]*cos(my_array[i][0]*M_PI/180.0)*assist_enlarge;
-				assist_detection.y = -my_array[i][1]*sin(my_array[i][0]*M_PI/180.0)*assist_enlarge;
+				detection.x = my_array[m_a_count][1]*cos(my_array[m_a_count][0]*M_PI/180.0)*my_map_enlarge;
+				detection.y = -my_array[m_a_count][1]*sin(my_array[m_a_count][0]*M_PI/180.0)*my_map_enlarge;
+				assist_detection.x = my_array[m_a_count][1]*cos(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
+				assist_detection.y = -my_array[m_a_count][1]*sin(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
 				//printf("check 2\n");
 				// 회전한 만큼 반대로 회전 시켜준다. //
 				detection = point_rotation(detection, -get_yaw*(M_PI/180.0));
