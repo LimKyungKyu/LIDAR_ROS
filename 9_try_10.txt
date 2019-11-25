@@ -161,7 +161,7 @@ void find_homography_simple(Mat for_surf_1, Mat for_surf_2)
 
 	//printf("degree %f, %f\n",original_degree, temp_degree);
 
-	Mat temp_rot = getRotationMatrix2D(degree_center, -(original_degree-temp_degree)*180.0/M_PI , 1);
+	Mat temp_rot = getRotationMatrix2D(degree_center, (original_degree-temp_degree)*180.0/M_PI , 1);
 	warpAffine(for_surf_1, rot_map, temp_rot, for_surf_1.size(), INTER_LINEAR);
 
 	// 매칭을 보여주는 함수 //
