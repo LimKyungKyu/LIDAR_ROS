@@ -25,17 +25,16 @@ using namespace std;
 Mat my_map(40*my_map_enlarge, 40*my_map_enlarge, CV_8UC1, Scalar(0)); // uchar형, 1채널, 0 = 검은색으로 채운다. 0 ~ 255 값을 가진다.
 // 중심 (20, 20), 전체 사이즈 40x40, 15배 확대, 1m = 15px //
 // 매번 측정하고 유사위치에 더해서 맵을 진하게 만들면서 늘려나갈 계획이다.
-
 Mat re_map(40*my_map_enlarge, 40*my_map_enlarge, CV_8UC1, Scalar(0)); // 초기화를 위한 맵 변수 선언
 Mat my_map_ch3; // 3채널 확장을 위한 맵 변수 선언
-Mat for_surf_cal_temp; // surf를 위한 공간 선언
+Mat map_result_area; // surf를 위한 공간 선언
 
 
 // 초기 좌표, 좌표계 선언 //
-Point2i my_center(my_map.size().width/2, my_map.size().height/2); // 초기 중심 좌표
-Point2i my_axis_x(my_map.size().width/8,0); // x축 좌표계 (폭의 1/8)
-Point2i my_axis_y(0,my_map.size().height/8); // y축 좌표계 (길이의 1/8)
-Point2i my_axis_x_rotation, my_axis_y_rotation; // IMU 회전 좌표계
+Point2d my_center(my_map.size().width/2, my_map.size().height/2); // 초기 중심 좌표
+Point2d my_axis_x(my_map.size().width/8,0); // x축 좌표계 (폭의 1/8)
+Point2d my_axis_y(0,my_map.size().height/8); // y축 좌표계 (길이의 1/8)
+Point2d my_axis_x_rotation, my_axis_y_rotation; // IMU 회전 좌표계
 int re_axis_count = 0; // 좌표축 갱신을 위한 선언
 
 
@@ -43,17 +42,17 @@ int re_axis_count = 0; // 좌표축 갱신을 위한 선언
 // 중심 (10,10), 전체 사이즈 20x20, 50배 확대, 1m = 50px //
 #define assist_enlarge 50
 Mat assist_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
+Mat assist_temp_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
 Mat assist_re_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
-Point2i assist_center(assist_map.size().width/2, assist_map.size().height/2);
-Point2i assist_axis_x(assist_map.size().width/8,0);
-Point2i assist_axis_y(0,assist_map.size().height/8); 
-Point2i assist_x_rotation, assist_y_rotation;
+Point2d assist_center(assist_map.size().width/2, assist_map.size().height/2);
+Point2d assist_axis_x(assist_map.size().width/8,0);
+Point2d assist_axis_y(0,assist_map.size().height/8); 
+Point2d assist_x_rotation, assist_y_rotation;
 
 
 // 데이터 저장공간 선언 //
 Point2d detection; // 유효한 좌표의 저장을 위한 변수 선언
-Point2d assist_detection; // 이하 동일
-
+Point2d assist_detection;
 
 // IMU값을 위한 변수 선언 //
 float get_roll = 0.0;
@@ -65,13 +64,15 @@ float imu_time_check = 0.0;
 int accumulate_map_count = 0;
 
 // 특징점 비교 후 새로 생성된 맵을 이동시키기 위한 변수 선언 //
-int x_move = 0;
-int y_move = 0;
-int x_y_sum = 0;
+double x_move = 0.0;
+double y_move = 0.0;
+double x_y_sum = 0.0;
 
 // 맵 갱신을 위한 변수 선언 //
 int remap_count = 0;
 
+// 매트릭스 회전을 위한 공간 선언 //
+Mat rot_map;
 
 // IMU에서 각도를 받는 함수 //
 void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
@@ -95,11 +96,11 @@ void check_scan_stamp(const std_msgs::Float32::ConstPtr& msg)
 
 
 // 포인트 회전을 위한 함수 //
-Point2i point_rotation(Point2i a, float b)
+Point2d point_rotation(Point2d a, float b)
 {
 	// float b 는 라디안이 입력되야한다.
 
-	Point2i temp_a(a.x,a.y);
+	Point2d temp_a;
 
 	temp_a.x = a.x*cos(b) - a.y*sin(b);
 	temp_a.y = a.x*sin(b) + a.y*cos(b);
@@ -113,8 +114,8 @@ Point2i point_rotation(Point2i a, float b)
 void from_IMU_modify_axis()
 {
 	//printf("\nhere? Tag1\n");
-	my_axis_x_rotation = point_rotation(my_axis_x,-get_yaw*(M_PI/180.0))+my_center;
-	my_axis_y_rotation = point_rotation(my_axis_y,get_yaw*(M_PI/180.0));
+	my_axis_x_rotation = point_rotation(my_axis_x,get_yaw*(M_PI/180.0))+my_center;
+	my_axis_y_rotation = point_rotation(my_axis_y,-get_yaw*(M_PI/180.0));
 	my_axis_y_rotation.y = -my_axis_y_rotation.y;
 	my_axis_y_rotation = my_axis_y_rotation+my_center;
 	line(my_map_ch3, my_center, my_axis_x_rotation, Scalar(0, 0, 255), 2, LINE_AA); // x 빨간색
@@ -125,6 +126,56 @@ void from_IMU_modify_axis()
 
 
 // 특징점 추출을 위한 함수 //
+void find_homography_simple(Mat for_surf_1, Mat for_surf_2)
+{
+	Mat src1 = for_surf_1.clone(); // 새로운 맵
+	Mat src2 = for_surf_2.clone(); // 원본 맵
+
+	if (src1.empty() || src2.empty()) {
+		cerr << "Image load failed!" << endl;
+		return;
+	}
+
+	Ptr<Feature2D> feature = ORB::create();
+	vector<KeyPoint> keypoints1, keypoints2;
+	Mat desc1, desc2;
+	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
+	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
+	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
+	vector<DMatch> matches;
+	matcher->match(desc1, desc2, matches);
+	std::sort(matches.begin(), matches.end());
+	vector<DMatch> good_matches(matches.begin(), matches.begin() + 5);
+	vector<Point2f> pts1, pts2;
+	for (size_t i = 0; i < good_matches.size(); i++) {
+		pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
+		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
+	}
+
+	Point2d degree_center;
+	degree_center.x = for_surf_1.size().width/2;
+	degree_center.y = for_surf_1.size().height/2;
+
+	double original_degree = atan2( (pts2[0].y-degree_center.y), (pts2[0].x-degree_center.x) );
+	double temp_degree = atan2( (pts1[0].y-degree_center.y), (pts1[0].x-degree_center.x));
+
+	//printf("degree %f, %f\n",original_degree, temp_degree);
+
+	Mat temp_rot = getRotationMatrix2D(degree_center, -(original_degree-temp_degree)*180.0/M_PI , 1);
+	warpAffine(for_surf_1, rot_map, temp_rot, for_surf_1.size(), INTER_LINEAR);
+
+	// 매칭을 보여주는 함수 //
+	Mat dst_0;
+	drawMatches(src1, keypoints1, src2, keypoints2, good_matches, dst_0,
+		Scalar::all(-1), Scalar::all(-1), vector<char>(),
+		DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+	//moveWindow("dst_0", 100, 600); // 모니터의 좌측 상단이 원점이다. (+x -y)
+	namedWindow("dst_0", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+	imshow("dst_0", dst_0);
+	waitKey(1);
+
+}
+
 void find_homography(Mat for_surf_1, Mat for_surf_2)
 {
 	Mat src1 = for_surf_1.clone(); // 새로운 맵
@@ -168,13 +219,18 @@ void find_homography(Mat for_surf_1, Mat for_surf_2)
 	//cout << sum(pts1)[0] << endl; // x열의 합만 추출
 	//cout << sum(pts1)[1] << endl; // y열의 합만 추출
 	//printf("here? Tag3\n");
-	x_move = (sum(pts2)[0] - sum(pts1)[0])/5.0; // 새로운 맵을 x_move만큼 더하기 위해 값을 구한다.
-	//printf("here? Tag4\n");
-	y_move = (sum(pts2)[1] - sum(pts1)[1])/5.0; // 새로운 맵을 y_move만큼 더하기 위해 값을 구한다.
-	printf("now going to move %d, %d\n", x_move, y_move);
-	x_y_sum = abs(x_move)+abs(y_move); // 20보다 크면 수행 하지 않을것이다.
 
-	// 단지 매칭을 보여주는 함수 //
+	for ( int i=0; i<good_matches.size(); i++ )
+	{
+		x_y_sum = x_y_sum + pow((pow((pts1[i].x-pts2[i].x),2)+pow((pts1[i].y-pts2[i].y),2)), 0.5);
+	}
+	x_y_sum = x_y_sum/good_matches.size();
+	//printf("%d\n", good_matches.size());
+	printf("total error value : %f\n", x_y_sum);
+	x_move = pts2[0].x - pts1[0].x;
+	y_move = pts2[0].y - pts1[0].y;
+
+	// 매칭을 보여주는 함수 //
 	Mat dst;
 	drawMatches(src1, keypoints1, src2, keypoints2, good_matches, dst,
 		Scalar::all(-1), Scalar::all(-1), vector<char>(),
@@ -189,7 +245,7 @@ void find_homography(Mat for_surf_1, Mat for_surf_2)
 // Mat 이동 함수 //
 void mat_translation(Mat img, Mat& dst, Point pt)
 {
-	// img를 이동시켜서 dst에 넣는다.
+	// img를 pt만큼 이동시켜서 dst에 넣는다.
 	Rect rect(Point(0,0), img.size());
 	dst = Mat(img.size(), img.type(), Scalar(0));
 	for (int i=0; i<dst.rows; i++)
@@ -214,39 +270,53 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 
 	if (remap_count > 10)
 	{
-		if ( for_surf_cal_temp.total() == 0 )
+		if ( map_result_area.total() == 0 )
 		{
-			for_surf_cal_temp = assist_map; // 초기 원본을 만든다.
+			Mat mat_resize_for_surf;
+			resize(assist_temp_map, mat_resize_for_surf, Size(assist_temp_map.cols*0.5,assist_temp_map.rows*0.5), 0, 0, INTER_AREA);
+
+			// 침식효과
+			Mat mask = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3), cv::Point(1, 1));
+			Mat temp;
+			erode(mat_resize_for_surf, temp, mask, cv::Point(-1, -1), 1);
+
+			map_result_area = temp.clone(); // 초기 원본을 만든다. 참조 아니고 복사 시킨다.
+
 		}
 		else
 		{
 			try
 			{
-				find_homography(assist_map, for_surf_cal_temp);
-				// assist_map : 새로운 맵, for_surf_cal_temp : 원본 맵
+				Mat mat_resize_for_surf;
+				resize(assist_temp_map, mat_resize_for_surf, Size(assist_temp_map.cols*0.5,assist_temp_map.rows*0.5), 0, 0, INTER_AREA);
+
+				// 침식효과
+				Mat mask = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3), cv::Point(1, 1));
+				Mat temp;
+				erode(mat_resize_for_surf, temp, mask, cv::Point(-1, -1), 1);
+
+				find_homography_simple(temp, map_result_area);
+				Mat rot_result_map = rot_map.clone();
+				find_homography(rot_result_map, map_result_area);
+
+				// temp : 새로운 맵, map_result_area : 원본 맵
+				if ( x_y_sum < 1 )
+				{
+					Mat move_temp;
+					mat_translation(rot_result_map, move_temp, Point(x_move,y_move));
+					map_result_area = map_result_area + move_temp; // 원본맵에 더한다.
+					x_y_sum = 0;
+				}
+				x_y_sum = 0;
 			}
 			catch(cv::Exception& e){
 			     printf("can't homography\n");
 			}
 
 
-			if ( x_y_sum < 20 )
-			{
-				Mat temp_move_map;
-				mat_translation(assist_map, temp_move_map, Point(x_move, y_move));
-				// assist_map을 이동시켜서 temp_move_map에 넣는다.
-				for_surf_cal_temp = for_surf_cal_temp + temp_move_map ; // 원본맵에 더한다.
-			}
-
-
-			// for_surf_cal_temp를 작게 만들어서 mat_resize_for_surf로 담는다.
-			// 보여주기 위한 용도다.
-			Mat mat_resize_for_surf;
-			resize(for_surf_cal_temp, mat_resize_for_surf, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
-
 			moveWindow("assist_window", 600, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
 			namedWindow("assist_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
-			imshow("assist_window", mat_resize_for_surf);
+			imshow("assist_window", map_result_area);
 			waitKey(1);
 
 
@@ -254,90 +324,97 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 		// 맵 갱신 //
 		my_map = re_map.clone();
 		assist_map = assist_re_map.clone();
+		assist_temp_map = assist_re_map.clone();
 		remap_count = 0;
 	}
 	else
 	{
-		// ydlidar_node가 발생시킨 scan토픽으로부터 전체 데이터 갯수를 획득 //
-		int count = scan->scan_time / scan->time_increment;
-
-		// my_array는 m_a_count 변수의 값을 보고 조정한다. //
-		// 매번 수가 변하므로 사용 후 파기하고 다시 선언하는것이 좋다. //
-		double my_array[1000][2];
-
-		// 전체 데이터중 유효한 데이터를 찾는 부분 //
-		int m_a_count = 0; // 유효한 거리값 측정 위한 선언
-		for(int i = 0; i < count; i++)
+		if( get_yaw == 0.0 )
 		{
-			float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+			printf("wait init\n");
+			sleep(0.1);
+		}
+		else
+		{
+			// ydlidar_node가 발생시킨 scan토픽으로부터 전체 데이터 갯수를 획득 //
+			int count = scan->scan_time / scan->time_increment;
 
-			if( degree<180.0 && degree>-180.0 )
+			// my_array는 m_a_count 변수의 값을 보고 조정한다. //
+			// 매번 수가 변하므로 사용 후 파기하고 다시 선언하는것이 좋다. //
+			double my_array[1000][2];
+
+			// 전체 데이터중 유효한 데이터를 찾는 부분 //
+			int m_a_count = 0; // 유효한 거리값 측정 위한 선언
+			for(int i = 0; i < count; i++)
 			{
-				if( isinf(scan->ranges[i]) || scan->ranges[i]<0.1 || scan->ranges[i]>8.0 )
-				{
-				// ydlidar의 datasheet 참조 //
-				// 최소 0.1m, 최대 8m의 측정을 보장한다. //
-				// 무한대, 0.1m미만, 8m초과 값을 버린다. //
-				}
-				else
-				{
-					my_array[m_a_count][0] = degree;
-					my_array[m_a_count][1] = scan->ranges[i];
-					//printf("check 1\n");
-					// openCV로 line을 생성하기 위한 좌표를 계산하고 확대 시킨다. //
-					detection.x = my_array[m_a_count][1]*cos(my_array[m_a_count][0]*M_PI/180.0)*my_map_enlarge;
-					detection.y = -my_array[m_a_count][1]*sin(my_array[m_a_count][0]*M_PI/180.0)*my_map_enlarge;
-					assist_detection.x = my_array[m_a_count][1]*cos(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
-					assist_detection.y = -my_array[m_a_count][1]*sin(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
-					//printf("check 2\n");
-					// 회전한 만큼 반대로 회전 시켜준다. //
-					detection = point_rotation(detection, -get_yaw*(M_PI/180.0));
-					assist_detection = point_rotation(assist_detection, -get_yaw*(M_PI/180.0));
-					//printf("check 3\n");
-					// 맵의 중심으로 이동시킨다. //
-					detection.x =  my_center.x + detection.x;
-					detection.y =  my_center.y + detection.y;
-					assist_detection.x =  assist_center.x + assist_detection.x;
-					assist_detection.y =  assist_center.y + assist_detection.y;
-					//printf("check 4\n");
-					// my_map의 my_center로 부터 detection까지 흰색으로(255), 굵기 2
-					line(my_map, my_center, detection, Scalar(255), 2);
-					line(assist_map, assist_center, assist_detection, Scalar(25), 5); // 옅은 흰색
-					//printf("check 5\n");
+				float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
 
-					// my_map의 detection위치에 반지름 2의 검은색 원, 굵기 -1 (채움)
-					// 원형으로 하니까 인식이 좋지 않음
-					//circle(my_map, detection, 2, Scalar(-255), -1);
-					//circle(assist_map, assist_detection, 3, Scalar(-255), -1);
-					rectangle(my_map, detection, Point2d(1.0,1.0), Scalar(-255), CV_FILLED);
-					rectangle(assist_map, detection, Point2d(1.0,1.0), Scalar(-255), CV_FILLED);
-					//printf("check 6\n");
-					++m_a_count;
+				if( degree<180.0 && degree>-180.0 )
+				{
+					if( isinf(scan->ranges[i]) || scan->ranges[i]<0.1 || scan->ranges[i]>8.0 )
+					{
+					// ydlidar의 datasheet 참조 //
+					// 최소 0.1m, 최대 8m의 측정을 보장한다. //
+					// 무한대, 0.1m미만, 8m초과 값을 버린다. //
+					}
+					else
+					{
+						my_array[m_a_count][0] = degree;
+						my_array[m_a_count][1] = scan->ranges[i];
+						//printf("check 1\n");
+						// openCV로 line을 생성하기 위한 좌표를 계산하고 확대 시킨다. //
+						detection.x = my_array[m_a_count][1]*cos(my_array[m_a_count][0]*M_PI/180.0)*my_map_enlarge;
+						detection.y = -my_array[m_a_count][1]*sin(my_array[m_a_count][0]*M_PI/180.0)*my_map_enlarge;
+						assist_detection.x = my_array[m_a_count][1]*cos(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
+						assist_detection.y = -my_array[m_a_count][1]*sin(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
 
-					//printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
-					//printf("i use yaw %f\n", get_yaw);
-					//printf("this time m_a_count is %d\n",m_a_count);
+						//printf("check 3\n");
+						// 맵의 중심으로 이동시킨다. //
+						detection.x =  my_center.x + detection.x;
+						detection.y =  my_center.y + detection.y;
+						assist_detection.x =  assist_center.x + assist_detection.x;
+						assist_detection.y =  assist_center.y + assist_detection.y;
+
+						//printf("check 4\n");
+						// my_map의 my_center로 부터 detection까지 흰색으로(255), 굵기 2
+						line(my_map, my_center, detection, Scalar(255), 2);
+						line(assist_map, assist_center, assist_detection, Scalar(25), 5); // 옅은 흰색
+
+						//printf("check 5\n");
+						// my_map의 detection위치에 반지름 2의 원으로 색을 없앤다. 굵기 -1 (채움)
+						// assist_map의 detection부터 detection까지 사각형으로 색을 없앤다. 
+						circle(my_map, detection, 2, Scalar(-255), -1);
+						rectangle(assist_map, detection, detection, Scalar(-255), CV_FILLED);
+
+						//printf("check 6\n");
+						++m_a_count;
+						//printf("angle, distance : [%.3f, %.3f]\n", degree, scan->ranges[i]);
+						//printf("i use yaw %f\n", get_yaw);
+						//printf("this time m_a_count is %d\n",m_a_count);
+					}
 				}
 			}
+
+			assist_temp_map = assist_temp_map + assist_map;
+
+			// 색이 있는 좌표축을 그리기 위해 원본 맵을 3채널로 확장한다. //
+			Mat in[] = {my_map, my_map, my_map};
+			merge(in, 3, my_map_ch3);
+			// 참고 : convertTo를 사용하여 변환하는 경우 검은색만 나오는 에러 발생 //
+			// my_map.convertTo(my_map_ch3, CV_8UC3, 255); //
+
+			// 좌표축 갱신 부분 //
+			from_IMU_modify_axis();
+
+			moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+			namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+			imshow("my_map_window", my_map_ch3);
+			moveWindow("assist_map_window", 1000, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+			namedWindow("assist_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+			imshow("assist_map_window", assist_temp_map);
+			waitKey(1);
+			++remap_count;
 		}
-
-		// 색이 있는 좌표축을 그리기 위해 원본 맵을 3채널로 확장한다. //
-		Mat in[] = {my_map, my_map, my_map};
-		merge(in, 3, my_map_ch3);
-		// 참고 : convertTo를 사용하여 변환하는 경우 검은색만 나오는 에러 발생 //
-		// my_map.convertTo(my_map_ch3, CV_8UC3, 255); //
-
-		// 좌표축 갱신 부분 //
-		from_IMU_modify_axis();
-
-		moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
-		namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
-		imshow("my_map_window", my_map_ch3);
-		moveWindow("assist_map_window", 1000, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
-		namedWindow("assist_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
-		imshow("assist_map_window", assist_map);
-		waitKey(1);
-		++remap_count;
 	}
 
 
@@ -377,21 +454,6 @@ int main(int argc, char **argv)
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-IMU와 시간연동을 하기 위한 시도
-// 시도 1 (필요없는 값이였음) //
-// #include "std_msgs/Header.h" //
-//ros::Time get_scan_time = scan->header.stamp;
-//float scan_time_check = get_scan_time.sec;
-//printf("scan time : %f\n", scan_time_check);
-
-
-// 시도 2 (필요없는 값이였음) //
-// #include "std_msgs/Header.h" //
-//float scan_time_check = scan.scan_time;
-//printf("scan time : %f\n", scan_time_check);
-
-
-// 시도 3 (성공) //
 ydlidar_node.cpp에 아래 헤더 추가 
 #include <std_msgs/Float32.h>
 #include <unistd.h>
@@ -422,9 +484,5 @@ msg파일(파이썬,cpp 모두) float32 imu_time_stamp 추가
 // 참고 //
 쓰레드 홀드 : https://hoony-gunputer.tistory.com/265
 
-// 사각형
-	rectangle(img, rc, color, thickness);
-
-	rectangle(img, rc.tl(), rc.br(), color, thickness);
-
-	rectangle(img, rc, color, CV_FILLED);	// filled rectangle
+// 업데이트 해야될것 //
+경계부분을 선으로 만들고 surf 매칭 하도록 만들기
