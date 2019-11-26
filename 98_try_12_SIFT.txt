@@ -14,7 +14,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <std_msgs/Float32.h>
-#include "opencv2/xfeatures2D/nonfree.hpp"
+#include "opencv2/xfeatures2d/nonfree.hpp"
 #define RAD2DEG(x) ((x)*180.0/M_PI)
 
 
@@ -116,7 +116,7 @@ void find_homography(Mat for_surf_1, Mat for_surf_2)
 		cerr << "Image load failed!" << endl;
 		return;
 	}
-	Ptr<Feature2D> feature = xfeatures2D::SIFT::create();
+	Ptr<Feature2D> feature = xfeatures2d::SIFT::create();
 	vector<KeyPoint> keypoints1, keypoints2;
 	Mat desc1, desc2;
 	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
@@ -198,7 +198,7 @@ void find_homography_start(Mat for_surf_1, Mat for_surf_2)
 		return;
 	}
 
-	Ptr<Feature2D> feature = xfeatures2D::SIFT::create();
+	Ptr<Feature2D> feature = xfeatures2d::SIFT::create();
 	vector<KeyPoint> keypoints1, keypoints2;
 	Mat desc1, desc2;
 	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
@@ -362,7 +362,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 						line(assist_map, assist_center, assist_detection, Scalar(25), 5); // 옅은 흰색
 
 						// assist_map의 detection부터 detection까지 사각형으로 색을 없앤다. 
-						rectangle(assist_map, assist_detection, assist_detection, Scalar(-255), CV_FILLED);
+						rectangle(assist_map, assist_detection, assist_detection, Scalar(-255), FILLED);
 
 						++m_a_count;
 					}
