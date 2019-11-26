@@ -14,7 +14,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <std_msgs/Float32.h>
-#include "opencv2/xfeatures2d/nonfree.hpp"
+#include <opencv4/opencv2/xfeatures2d/nonfree.hpp>
 #define RAD2DEG(x) ((x)*180.0/M_PI)
 
 
@@ -116,7 +116,7 @@ void find_homography(Mat for_surf_1, Mat for_surf_2)
 		cerr << "Image load failed!" << endl;
 		return;
 	}
-	Ptr<Feature2D> feature = xfeatures2d::SIFT::create();
+	Ptr<Feature2D> feature = xfeatures2d::SURF::create();
 	vector<KeyPoint> keypoints1, keypoints2;
 	Mat desc1, desc2;
 	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
@@ -198,7 +198,7 @@ void find_homography_start(Mat for_surf_1, Mat for_surf_2)
 		return;
 	}
 
-	Ptr<Feature2D> feature = xfeatures2d::SIFT::create();
+	Ptr<Feature2D> feature = xfeatures2d::SURF::create();
 	vector<KeyPoint> keypoints1, keypoints2;
 	Mat desc1, desc2;
 	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
