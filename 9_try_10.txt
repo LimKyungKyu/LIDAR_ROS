@@ -63,16 +63,8 @@ float imu_time_check = 0.0;
 // 10번마다 축적 맵을 보여주기 위한 카운트 //
 int accumulate_map_count = 0;
 
-// 특징점 비교 후 새로 생성된 맵을 이동시키기 위한 변수 선언 //
-double x_move = 0.0;
-double y_move = 0.0;
-double x_y_sum = 0.0;
-
 // 맵 갱신을 위한 변수 선언 //
 int remap_count = 0;
-
-// 매트릭스 회전을 위한 공간 선언 //
-Mat rot_map;
 
 // IMU에서 각도를 받는 함수 //
 void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
@@ -124,126 +116,9 @@ void from_IMU_modify_axis()
 	//printf("rotation x,y : (%f, %f)\n",my_axis_y_rotation.x, my_axis_y_rotation.y);
 }
 
-
-// 특징점 추출을 위한 함수 //
-void find_homography_simple(Mat for_surf_1, Mat for_surf_2)
-{
-	Mat src1 = for_surf_1.clone(); // 새로운 맵
-	Mat src2 = for_surf_2.clone(); // 원본 맵
-
-	if (src1.empty() || src2.empty()) {
-		cerr << "Image load failed!" << endl;
-		return;
-	}
-
-	Ptr<Feature2D> feature = ORB::create();
-	vector<KeyPoint> keypoints1, keypoints2;
-	Mat desc1, desc2;
-	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
-	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
-	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
-	vector<DMatch> matches;
-	matcher->match(desc1, desc2, matches);
-	std::sort(matches.begin(), matches.end());
-	vector<DMatch> good_matches(matches.begin(), matches.begin() + 5);
-	vector<Point2f> pts1, pts2;
-	for (size_t i = 0; i < good_matches.size(); i++) {
-		pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
-		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
-	}
-
-	Point2d degree_center;
-	degree_center.x = for_surf_1.size().width/2;
-	degree_center.y = for_surf_1.size().height/2;
-
-	double original_degree = atan2( (pts2[0].y-degree_center.y), (pts2[0].x-degree_center.x) );
-	double temp_degree = atan2( (pts1[0].y-degree_center.y), (pts1[0].x-degree_center.x));
-
-	//printf("degree %f, %f\n",original_degree, temp_degree);
-
-	Mat temp_rot = getRotationMatrix2D(degree_center, (original_degree-temp_degree)*180.0/M_PI , 1);
-	warpAffine(for_surf_1, rot_map, temp_rot, for_surf_1.size(), INTER_LINEAR);
-
-	// 매칭을 보여주는 함수 //
-	Mat dst_0;
-	drawMatches(src1, keypoints1, src2, keypoints2, good_matches, dst_0,
-		Scalar::all(-1), Scalar::all(-1), vector<char>(),
-		DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-	//moveWindow("dst_0", 100, 600); // 모니터의 좌측 상단이 원점이다. (+x -y)
-	namedWindow("dst_0", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
-	imshow("dst_0", dst_0);
-	waitKey(1);
-
-}
-
-void find_homography(Mat for_surf_1, Mat for_surf_2)
-{
-	Mat src1 = for_surf_1.clone(); // 새로운 맵
-	Mat src2 = for_surf_2.clone(); // 원본 맵
-
-	//printf("here? Tag1\n");
-
-	if (src1.empty() || src2.empty()) {
-		cerr << "Image load failed!" << endl;
-		return;
-	}
-
-	//printf("here? Tag2\n");
-	Ptr<Feature2D> feature = ORB::create();
-	//printf("here? Tag2-2\n");
-	vector<KeyPoint> keypoints1, keypoints2;
-	Mat desc1, desc2;
-	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
-	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
-	//printf("here? Tag2-3\n");
-	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
-
-	vector<DMatch> matches;
-	matcher->match(desc1, desc2, matches);
-
-	std::sort(matches.begin(), matches.end());
-	//printf("here? Tag2-4\n");
-	vector<DMatch> good_matches(matches.begin(), matches.begin() + 5);
-
-	//printf("here? Tag2-5\n");
-	vector<Point2f> pts1, pts2;
-	for (size_t i = 0; i < good_matches.size(); i++) {
-		pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
-		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
-	}
-
-	//cout << pts1 << endl;
-	//cout << pts1[0].x << endl;
-	//cout << pts1[0].y << endl;
-	//cout << sum(pts1) << endl; // [x열의 합, y열의 합, 0, 0]을 반환한다.
-	//cout << sum(pts1)[0] << endl; // x열의 합만 추출
-	//cout << sum(pts1)[1] << endl; // y열의 합만 추출
-	//printf("here? Tag3\n");
-
-	for ( int i=0; i<good_matches.size(); i++ )
-	{
-		x_y_sum = x_y_sum + pow((pow((pts1[i].x-pts2[i].x),2)+pow((pts1[i].y-pts2[i].y),2)), 0.5);
-	}
-	x_y_sum = x_y_sum/good_matches.size();
-	//printf("%d\n", good_matches.size());
-	printf("total error value : %f\n", x_y_sum);
-	x_move = pts2[0].x - pts1[0].x;
-	y_move = pts2[0].y - pts1[0].y;
-
-	// 매칭을 보여주는 함수 //
-	Mat dst;
-	drawMatches(src1, keypoints1, src2, keypoints2, good_matches, dst,
-		Scalar::all(-1), Scalar::all(-1), vector<char>(),
-		DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-	//moveWindow("dst", 100, 600); // 모니터의 좌측 상단이 원점이다. (+x -y)
-	namedWindow("dst", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
-	imshow("dst", dst);
-	waitKey(1);
-}
-
-
 // Mat 이동 함수 //
-void mat_translation(Mat img, Mat& dst, Point pt)
+// 좌측 상단으로부터 +x -y 방향으로 1,1 움직이는것 확인함 //
+void mat_translation(Mat img, Mat& dst, Point2d pt)
 {
 	// img를 pt만큼 이동시켜서 dst에 넣는다.
 	Rect rect(Point(0,0), img.size());
@@ -252,16 +127,177 @@ void mat_translation(Mat img, Mat& dst, Point pt)
 	{
 		for (int j=0; j<dst.cols; j++)
 		{
-			Point dst_pt(j,i);
-			Point img_pt = dst_pt - pt;
+			Point2d dst_pt(j,i);
+			Point2d img_pt = dst_pt - pt;
 			if (rect.contains(img_pt))
 				dst.at<uchar>(dst_pt) = img.at<uchar>(img_pt);
 		}
 	}
 }
 
+void find_homography(Mat for_surf_1, Mat for_surf_2)
+{
+	Mat src1 = for_surf_1; // 새로운 맵
+	Mat src2 = for_surf_2; // 원본 맵
+
+	if (src1.empty() || src2.empty())
+	{
+		cerr << "Image load failed!" << endl;
+		return;
+	}
+	Ptr<Feature2D> feature = ORB::create();
+	vector<KeyPoint> keypoints1, keypoints2;
+	Mat desc1, desc2;
+	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
+	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
+	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
+	vector<DMatch> matches;
+	matcher->match(desc1, desc2, matches);
+	std::sort(matches.begin(), matches.end());
+	vector<DMatch> good_matches(matches.begin(), matches.begin() + 5);
+	vector<Point2f> pts1, pts2;
+	for (size_t i = 0; i < good_matches.size(); i++)
+	{
+		pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
+		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
+	}
 
 
+
+	// 이미지 2개의 특징점 5개로 두점사이의 거리를 구해서 정수화 한다.
+	vector<int> xy_distance;
+	xy_distance.reserve(6);
+	for ( int i=0; i<good_matches.size(); i++ )
+	{
+		xy_distance.push_back(pow((pow((pts1[i].x-pts2[i].x),2)+pow((pts1[i].y-pts2[i].y),2)), 0.5));
+		printf("xy_distance : %d\n", xy_distance[i]);
+	}
+
+	// 얻어낸 정수가 일정하면 이미지가 일치한것이므로 해당 정수의 빈도를 구한다.
+	int max_distance = pow( (pow(for_surf_1.size().width,2)+pow(for_surf_1.size().height,2)), 0.5 ); // 대각선길이 = 얻을 수 있는 정수의 최대값
+	int repeat_check[max_distance] = {0};
+	for ( int i=0; i<good_matches.size(); i++ )
+	{
+		repeat_check[xy_distance[i]] += 1;
+	}
+
+	// 최대 빈도수를 얻는다.
+	int accumulation_check = *max_element(repeat_check, repeat_check+max_distance); // 최대 빈도수 
+	printf("accumulation_check : %d\n", accumulation_check);
+
+	// 최대 빈도수가 3을 초과하면 아래 작업을 수행한다.
+	if ( accumulation_check > 3 )
+	{
+		// 최대 빈도수에 해당하는 정수를 얻는다.
+		int get_move_distance = 0;
+		for ( int i=0; i<max_distance; i++ )
+		{
+			if ( accumulation_check == repeat_check[i] )
+			{
+				get_move_distance = i;
+				printf("get_move_distance : %d\n", i);
+				// 정수가 일치하는 점의 x,y를 구해서 이동시키고 맵에 누적한다.
+				for ( int j=0; j<good_matches.size(); j++ )
+				{
+					if ( xy_distance[j] == get_move_distance )
+					{
+						double x_move = pts2[j].x - pts1[j].x;
+						double y_move = pts2[j].y - pts1[j].y;
+						Mat move_temp;
+						mat_translation(for_surf_1, move_temp, Point2d(x_move,y_move));
+						map_result_area = map_result_area + move_temp; // 원본맵에 더한다.
+						printf("moved x,y : %f,%f\n", x_move, y_move);
+						return;
+					}
+				}
+			}
+		}
+	}
+}
+
+// 특징점 추출을 위한 함수 //
+void find_homography_start(Mat for_surf_1, Mat for_surf_2)
+{
+	Mat src1 = for_surf_1; // 새로운 맵
+	Mat src2 = for_surf_2; // 원본 맵
+
+	if (src1.empty() || src2.empty()) {
+		cerr << "Image load failed!" << endl;
+		return;
+	}
+
+	Ptr<Feature2D> feature = ORB::create();
+	vector<KeyPoint> keypoints1, keypoints2;
+	Mat desc1, desc2;
+	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
+	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
+	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
+	vector<DMatch> matches;
+	matcher->match(desc1, desc2, matches);
+	std::sort(matches.begin(), matches.end());
+	vector<DMatch> good_matches(matches.begin(), matches.begin() + 5);
+	vector<Point2f> pts1, pts2;
+	for (size_t i = 0; i < good_matches.size(); i++)
+	{
+		pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
+		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
+	}
+
+	Point2d degree_center;
+	degree_center.x = for_surf_1.size().width/2;
+	degree_center.y = for_surf_1.size().height/2;
+
+	vector<double> original_degree, temp_degree;
+	for (int i=0; i<good_matches.size(); i++)
+	{
+		original_degree.push_back(atan2( -(pts2[i].y-degree_center.y), (pts2[i].x-degree_center.x) ));
+		temp_degree.push_back(atan2( -(pts1[i].y-degree_center.y), (pts1[i].x-degree_center.x)));
+	}
+
+	// 반시계 +
+	Mat temp_rot_1 = getRotationMatrix2D(degree_center, (original_degree[0]-temp_degree[0])*180.0/M_PI , 1);
+	Mat temp_rot_2 = getRotationMatrix2D(degree_center, (original_degree[1]-temp_degree[1])*180.0/M_PI , 1);
+	Mat temp_rot_3 = getRotationMatrix2D(degree_center, (original_degree[2]-temp_degree[2])*180.0/M_PI , 1);
+	Mat temp_rot_4 = getRotationMatrix2D(degree_center, (original_degree[3]-temp_degree[3])*180.0/M_PI , 1);
+	Mat temp_rot_5 = getRotationMatrix2D(degree_center, (original_degree[4]-temp_degree[4])*180.0/M_PI , 1);
+
+	Mat rot_map_rank_1, rot_map_rank_2, rot_map_rank_3, rot_map_rank_4, rot_map_rank_5;
+
+	// for_surf_1를 rot_map_rank_1에 담는다. temp_rot_1를 참조해서, 사이즈, 타입.
+	warpAffine(for_surf_1, rot_map_rank_1, temp_rot_1, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(for_surf_1, rot_map_rank_2, temp_rot_2, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(for_surf_1, rot_map_rank_3, temp_rot_3, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(for_surf_1, rot_map_rank_4, temp_rot_4, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(for_surf_1, rot_map_rank_5, temp_rot_5, for_surf_1.size(), INTER_LINEAR);
+
+	namedWindow("rotation_mat_1", WINDOW_AUTOSIZE);
+	namedWindow("rotation_mat_2", WINDOW_AUTOSIZE);
+	namedWindow("rotation_mat_3", WINDOW_AUTOSIZE);
+	namedWindow("rotation_mat_4", WINDOW_AUTOSIZE);
+	namedWindow("rotation_mat_5", WINDOW_AUTOSIZE);
+
+	imshow("rotation_mat_1", rot_map_rank_1);
+	imshow("rotation_mat_2", rot_map_rank_2);
+	imshow("rotation_mat_3", rot_map_rank_3);
+	imshow("rotation_mat_4", rot_map_rank_4);
+	imshow("rotation_mat_5", rot_map_rank_5);
+
+	// 매칭을 보여주는 함수 //
+	Mat dst;
+	drawMatches(src1, keypoints1, src2, keypoints2, good_matches, dst,
+		Scalar::all(-1), Scalar::all(-1), vector<char>(),
+		DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+	moveWindow("dst", 100, 600); // 모니터의 좌측 상단이 원점이다. (+x -y)
+	namedWindow("dst", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+	imshow("dst", dst);
+	waitKey(1);
+
+	find_homography(rot_map_rank_1, map_result_area);
+	find_homography(rot_map_rank_2, map_result_area);
+	find_homography(rot_map_rank_3, map_result_area);
+	find_homography(rot_map_rank_4, map_result_area);
+	find_homography(rot_map_rank_5, map_result_area);
+}
 
 
 // 맵 그리는 함수 //
@@ -295,19 +331,8 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 				Mat temp;
 				erode(mat_resize_for_surf, temp, mask, cv::Point(-1, -1), 1);
 
-				find_homography_simple(temp, map_result_area);
-				Mat rot_result_map = rot_map.clone();
-				find_homography(rot_result_map, map_result_area);
+				find_homography_start(temp, map_result_area);
 
-				// temp : 새로운 맵, map_result_area : 원본 맵
-				if ( x_y_sum < 1 )
-				{
-					Mat move_temp;
-					mat_translation(rot_result_map, move_temp, Point(x_move,y_move));
-					map_result_area = map_result_area + move_temp; // 원본맵에 더한다.
-					x_y_sum = 0;
-				}
-				x_y_sum = 0;
 			}
 			catch(cv::Exception& e){
 			     printf("can't homography\n");
@@ -406,12 +431,12 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 			// 좌표축 갱신 부분 //
 			from_IMU_modify_axis();
 
-			moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
-			namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
-			imshow("my_map_window", my_map_ch3);
-			moveWindow("assist_map_window", 1000, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
-			namedWindow("assist_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
-			imshow("assist_map_window", assist_temp_map);
+			//moveWindow("my_map_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+			//namedWindow("my_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+			//imshow("my_map_window", my_map_ch3);
+			//moveWindow("assist_map_window", 1000, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+			//namedWindow("assist_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+			//imshow("assist_map_window", assist_temp_map);
 			waitKey(1);
 			++remap_count;
 		}
@@ -486,3 +511,7 @@ msg파일(파이썬,cpp 모두) float32 imu_time_stamp 추가
 
 // 업데이트 해야될것 //
 경계부분을 선으로 만들고 surf 매칭 하도록 만들기
+
+// 참고 //
+Mat 다차원
+https://stackoverflow.com/questions/26930430/split-3d-matnd-into-vector-of-2d-mat-opencv
