@@ -14,6 +14,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <std_msgs/Float32.h>
+// #include <opencv4/opencv2/xfeatures2d/nonfree.hpp>
 #define RAD2DEG(x) ((x)*180.0/M_PI)
 
 
@@ -25,7 +26,6 @@ using namespace std;
 // 중심 (10,10), 전체 사이즈 20x20, 50배 확대, 1m = 50px //
 #define assist_enlarge 50
 Mat assist_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
-Mat assist_temp_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
 Mat assist_re_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
 Point2d assist_center(assist_map.size().width/2, assist_map.size().height/2);
 Point2d assist_axis_x(assist_map.size().width/8,0);
@@ -33,7 +33,10 @@ Point2d assist_axis_y(0,assist_map.size().height/8);
 Point2d assist_x_rotation, assist_y_rotation;
 
 // surf를 위한 변수 선언 //
+Mat temp_5;
+Mat temp_ready;
 Mat orb_sift_surf_area;
+Point2d rot_cen_for_homo;
 
 // 데이터 저장공간 선언 //
 Point2d assist_detection;
@@ -49,6 +52,21 @@ int remap_count = 0;
 
 // 맵 축적을 위한 조건 //
 int acu_map_condition;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // IMU에서 각도를 받는 함수 //
 void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
@@ -85,6 +103,14 @@ Point2d point_rotation(Point2d a, float b)
 	return temp_a;
 }
 
+
+
+
+
+
+
+
+
 // Mat 이동 함수 //
 // 좌측 상단으로부터 +x -y 방향으로 1,1 움직이는것 확인함 //
 void mat_translation(Mat img, Mat& dst, Point2d pt)
@@ -104,7 +130,8 @@ void mat_translation(Mat img, Mat& dst, Point2d pt)
 	}
 }
 
-void find_homography(Mat for_surf_1, Mat for_surf_2)
+
+void accumulation_mat(Mat for_surf_1, Mat for_surf_2)
 {
 	Mat src1 = for_surf_1; // 새로운 맵
 	Mat src2 = for_surf_2; // 원본 맵
@@ -115,11 +142,13 @@ void find_homography(Mat for_surf_1, Mat for_surf_2)
 		return;
 	}
 	Ptr<Feature2D> feature = ORB::create();
+	// Ptr<Feature2D> feature = xfeatures2d::SURF::create();
 	vector<KeyPoint> keypoints1, keypoints2;
 	Mat desc1, desc2;
 	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
 	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
 	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
+	// Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_L1);
 	vector<DMatch> matches;
 	matcher->match(desc1, desc2, matches);
 	std::sort(matches.begin(), matches.end());
@@ -173,9 +202,9 @@ void find_homography(Mat for_surf_1, Mat for_surf_2)
 					{
 						double x_move = pts2[j].x - pts1[j].x;
 						double y_move = pts2[j].y - pts1[j].y;
-						Mat move_temp;
-						mat_translation(for_surf_1, move_temp, Point2d(x_move,y_move));
-						orb_sift_surf_area = orb_sift_surf_area + move_temp; // 원본맵에 더한다.
+						Mat accumulation_ready;
+						mat_translation(for_surf_1, accumulation_ready, Point2d(x_move,y_move));
+						orb_sift_surf_area = orb_sift_surf_area + accumulation_ready;
 						printf("moved x,y : %f,%f\n", x_move, y_move);
 						return;
 					}
@@ -185,8 +214,8 @@ void find_homography(Mat for_surf_1, Mat for_surf_2)
 	}
 }
 
-// 특징점 추출을 위한 함수 //
-void find_homography_start(Mat for_surf_1, Mat for_surf_2)
+
+void homography_final(Mat for_surf_1, Mat for_surf_2)
 {
 	Mat src1 = for_surf_1; // 새로운 맵
 	Mat src2 = for_surf_2; // 원본 맵
@@ -197,11 +226,13 @@ void find_homography_start(Mat for_surf_1, Mat for_surf_2)
 	}
 
 	Ptr<Feature2D> feature = ORB::create();
+	// Ptr<Feature2D> feature = xfeatures2d::SURF::create();
 	vector<KeyPoint> keypoints1, keypoints2;
 	Mat desc1, desc2;
 	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
 	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
 	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
+	// Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_L1);
 	vector<DMatch> matches;
 	matcher->match(desc1, desc2, matches);
 	std::sort(matches.begin(), matches.end());
@@ -213,23 +244,22 @@ void find_homography_start(Mat for_surf_1, Mat for_surf_2)
 		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
 	}
 
-	Point2d degree_center;
-	degree_center.x = for_surf_1.size().width/2;
-	degree_center.y = for_surf_1.size().height/2;
+	rot_cen_for_homo.x = for_surf_1.size().width/2;
+	rot_cen_for_homo.y = for_surf_1.size().height/2;
 
 	vector<double> original_degree, temp_degree;
 	for (int i=0; i<good_matches.size(); i++)
 	{
-		original_degree.push_back(atan2( -(pts2[i].y-degree_center.y), (pts2[i].x-degree_center.x) ));
-		temp_degree.push_back(atan2( -(pts1[i].y-degree_center.y), (pts1[i].x-degree_center.x)));
+		original_degree.push_back(atan2( -(pts2[i].y-rot_cen_for_homo.y), (pts2[i].x-rot_cen_for_homo.x) ));
+		temp_degree.push_back(atan2( -(pts1[i].y-rot_cen_for_homo.y), (pts1[i].x-rot_cen_for_homo.x)));
 	}
 
 	// 반시계 +
-	Mat temp_rot_1 = getRotationMatrix2D(degree_center, (original_degree[0]-temp_degree[0])*180.0/M_PI , 1);
-	Mat temp_rot_2 = getRotationMatrix2D(degree_center, (original_degree[1]-temp_degree[1])*180.0/M_PI , 1);
-	Mat temp_rot_3 = getRotationMatrix2D(degree_center, (original_degree[2]-temp_degree[2])*180.0/M_PI , 1);
-	Mat temp_rot_4 = getRotationMatrix2D(degree_center, (original_degree[3]-temp_degree[3])*180.0/M_PI , 1);
-	Mat temp_rot_5 = getRotationMatrix2D(degree_center, (original_degree[4]-temp_degree[4])*180.0/M_PI , 1);
+	Mat temp_rot_1 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[0]-temp_degree[0])*180.0/M_PI , 1);
+	Mat temp_rot_2 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[1]-temp_degree[1])*180.0/M_PI , 1);
+	Mat temp_rot_3 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[2]-temp_degree[2])*180.0/M_PI , 1);
+	Mat temp_rot_4 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[3]-temp_degree[3])*180.0/M_PI , 1);
+	Mat temp_rot_5 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[4]-temp_degree[4])*180.0/M_PI , 1);
 
 	Mat rot_map_rank_1, rot_map_rank_2, rot_map_rank_3, rot_map_rank_4, rot_map_rank_5;
 
@@ -240,6 +270,159 @@ void find_homography_start(Mat for_surf_1, Mat for_surf_2)
 	warpAffine(for_surf_1, rot_map_rank_4, temp_rot_4, for_surf_1.size(), INTER_LINEAR);
 	warpAffine(for_surf_1, rot_map_rank_5, temp_rot_5, for_surf_1.size(), INTER_LINEAR);
 
+	accumulation_mat(rot_map_rank_1, orb_sift_surf_area);
+	accumulation_mat(rot_map_rank_2, orb_sift_surf_area);
+	accumulation_mat(rot_map_rank_3, orb_sift_surf_area);
+	accumulation_mat(rot_map_rank_4, orb_sift_surf_area);
+	accumulation_mat(rot_map_rank_5, orb_sift_surf_area);
+}
+
+
+void get_rot_mat_and_do_homo(Mat for_surf_1, Mat for_surf_2)
+{
+	Mat src1 = for_surf_1; // 새로운 맵
+	Mat src2 = for_surf_2; // 원본 맵
+
+	if (src1.empty() || src2.empty())
+	{
+		cerr << "Image load failed!" << endl;
+		return;
+	}
+	Ptr<Feature2D> feature = ORB::create();
+	// Ptr<Feature2D> feature = xfeatures2d::SURF::create();
+	vector<KeyPoint> keypoints1, keypoints2;
+	Mat desc1, desc2;
+	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
+	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
+	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
+	// Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_L1);
+	vector<DMatch> matches;
+	matcher->match(desc1, desc2, matches);
+	std::sort(matches.begin(), matches.end());
+	vector<DMatch> good_matches(matches.begin(), matches.begin() + 5);
+	vector<Point2f> pts1, pts2;
+	for (size_t i = 0; i < good_matches.size(); i++)
+	{
+		pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
+		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
+	}
+
+
+	// 이미지 2개의 특징점 5개로 두점사이의 거리를 구해서 정수화 한다.
+	vector<int> xy_distance;
+	xy_distance.reserve(6); // 꽉차면 공간을 늘리니까 미리 +1개 해놓는다.
+	for ( int i=0; i<good_matches.size(); i++ )
+	{
+		xy_distance.push_back(pow((pow((pts1[i].x-pts2[i].x),2)+pow((pts1[i].y-pts2[i].y),2)), 0.5));
+		printf("xy_distance : %d\n", xy_distance[i]);
+	}
+
+	// 얻어낸 정수가 일정하면 이미지가 일치한것이므로
+	// 일정한지 알기 위해서 해당 정수의 빈도를 구한다.
+	int max_distance = pow( (pow(for_surf_1.size().width,2)+pow(for_surf_1.size().height,2)), 0.5 ); // 대각선길이 = 얻을 수 있는 정수의 최대값
+	int repeat_check[max_distance] = {0};
+	for ( int i=0; i<good_matches.size(); i++ )
+	{
+		repeat_check[xy_distance[i]] += 1;
+		// xy_distance[0]의 값이 10이면 repeat_check의 10번째 인덱스에 +1된다.
+		// xy_distance[1]의 값이 7이면 repeat_check의 7번째 인덱스에 +1된다.
+	}
+
+	// 최대 빈도수를 얻는다.
+	int accumulation_check = *max_element(repeat_check, repeat_check+max_distance);
+	printf("accumulation_check : %d\n", accumulation_check);
+
+	// 최대 빈도수가 표본의 70%를 초과하면 아래 작업을 수행한다.
+	acu_map_condition = int(good_matches.size()*0.7);
+	if ( accumulation_check > acu_map_condition )
+	{
+		int get_move_distance = 0;
+		for ( int i=0; i<max_distance; i++ )
+		{
+			// repeat_check의 몇번째 인덱스가 최대 빈도인지 찾는다.
+			if ( accumulation_check == repeat_check[i] )
+			{
+				// 최대 빈도를 가진 인덱스를 찾았다.
+				get_move_distance = i;
+				printf("get_move_distance : %d\n", i);
+				// 인덱스와 일치하는 가장 상위점을 구해서 이동시킨다.
+				for ( int j=0; j<good_matches.size(); j++ )
+				{
+					if ( xy_distance[j] == get_move_distance )
+					{
+						double x_move = pts2[j].x - pts1[j].x;
+						double y_move = pts2[j].y - pts1[j].y;
+						mat_translation(for_surf_1, temp_ready, Point2d(x_move,y_move));
+						return;
+					}
+				}
+			}
+		}
+	}
+}
+
+void homography_start(Mat for_surf_1, Mat for_surf_2)
+{
+	Mat src1 = for_surf_1; // 새로운 맵
+	Mat src2 = for_surf_2; // 원본 맵
+
+	if (src1.empty() || src2.empty()) {
+		cerr << "Image load failed!" << endl;
+		return;
+	}
+
+	Ptr<Feature2D> feature = ORB::create();
+	// Ptr<Feature2D> feature = xfeatures2d::SURF::create();
+
+	Mat desc1, desc2;
+	vector<KeyPoint> keypoints1, keypoints2;
+	feature->detectAndCompute(src1, Mat(), keypoints1, desc1);
+	feature->detectAndCompute(src2, Mat(), keypoints2, desc2);
+
+	Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_HAMMING);
+	// Ptr<DescriptorMatcher> matcher = BFMatcher::create(NORM_L1);
+	
+	vector<DMatch> matches;
+	matcher->match(desc1, desc2, matches);
+
+	std::sort(matches.begin(), matches.end());
+	vector<DMatch> good_matches(matches.begin(), matches.begin() + 5);
+	
+	vector<Point2f> pts1, pts2;
+	for (size_t i = 0; i < good_matches.size(); i++)
+	{
+		pts1.push_back(keypoints1[good_matches[i].queryIdx].pt);
+		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
+	}
+
+	rot_cen_for_homo.x = for_surf_1.size().width/2;
+	rot_cen_for_homo.y = for_surf_1.size().height/2;
+
+	vector<double> original_degree, temp_degree;
+	for (int i=0; i<good_matches.size(); i++)
+	{
+		// +x -y 방향이니까 y는 부호를 바꿔줘야한다. //
+		original_degree.push_back(atan2( -(pts2[i].y-rot_cen_for_homo.y), (pts2[i].x-rot_cen_for_homo.x) ));
+		temp_degree.push_back(atan2( -(pts1[i].y-rot_cen_for_homo.y), (pts1[i].x-rot_cen_for_homo.x)));
+	}
+
+	// 반시계 + 
+	Mat temp_rot_1 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[0]-temp_degree[0])*180.0/M_PI , 1);
+	Mat temp_rot_2 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[1]-temp_degree[1])*180.0/M_PI , 1);
+	Mat temp_rot_3 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[2]-temp_degree[2])*180.0/M_PI , 1);
+	Mat temp_rot_4 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[3]-temp_degree[3])*180.0/M_PI , 1);
+	Mat temp_rot_5 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[4]-temp_degree[4])*180.0/M_PI , 1);
+
+	Mat rot_map_rank_1, rot_map_rank_2, rot_map_rank_3, rot_map_rank_4, rot_map_rank_5;
+
+	// for_surf_1를 rot_map_rank_1에 담는다. temp_rot_1를 참조해서, 사이즈, 타입.
+	warpAffine(for_surf_1, rot_map_rank_1, temp_rot_1, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(for_surf_1, rot_map_rank_2, temp_rot_2, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(for_surf_1, rot_map_rank_3, temp_rot_3, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(for_surf_1, rot_map_rank_4, temp_rot_4, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(for_surf_1, rot_map_rank_5, temp_rot_5, for_surf_1.size(), INTER_LINEAR);
+
+/*
 	namedWindow("rotation_mat_1", WINDOW_AUTOSIZE);
 	namedWindow("rotation_mat_2", WINDOW_AUTOSIZE);
 	namedWindow("rotation_mat_3", WINDOW_AUTOSIZE);
@@ -251,6 +434,7 @@ void find_homography_start(Mat for_surf_1, Mat for_surf_2)
 	imshow("rotation_mat_3", rot_map_rank_3);
 	imshow("rotation_mat_4", rot_map_rank_4);
 	imshow("rotation_mat_5", rot_map_rank_5);
+*/
 
 	// 매칭을 보여주는 함수 //
 	Mat dst;
@@ -262,12 +446,26 @@ void find_homography_start(Mat for_surf_1, Mat for_surf_2)
 	imshow("dst", dst);
 	waitKey(1);
 
-	find_homography(rot_map_rank_1, orb_sift_surf_area);
-	find_homography(rot_map_rank_2, orb_sift_surf_area);
-	find_homography(rot_map_rank_3, orb_sift_surf_area);
-	find_homography(rot_map_rank_4, orb_sift_surf_area);
-	find_homography(rot_map_rank_5, orb_sift_surf_area);
+
+	get_rot_mat_and_do_homo(rot_map_rank_1, temp_5);
+	homography_final(temp_ready, orb_sift_surf_area);
+
+	get_rot_mat_and_do_homo(rot_map_rank_2, temp_5);
+	homography_final(temp_ready, orb_sift_surf_area);
+
+	get_rot_mat_and_do_homo(rot_map_rank_3, temp_5);
+	homography_final(temp_ready, orb_sift_surf_area);
+
+	get_rot_mat_and_do_homo(rot_map_rank_4, temp_5);
+	homography_final(temp_ready, orb_sift_surf_area);
+
+	get_rot_mat_and_do_homo(rot_map_rank_5, temp_5);
+	homography_final(temp_ready, orb_sift_surf_area);
 }
+
+
+
+
 
 
 // 맵 그리는 함수 //
@@ -281,7 +479,8 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 
 			Mat mat_resize_for_surf;
 			resize(assist_map, mat_resize_for_surf, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
-			orb_sift_surf_area = mat_resize_for_surf.clone(); // 초기 원본을 만든다. 참조 아니고 복사 시킨다.
+			temp_5 = mat_resize_for_surf.clone(); // 다음 5장과 비교할 맵을 임시로 복사한다.
+			orb_sift_surf_area = mat_resize_for_surf.clone(); // 초기 원본을 만든다. 참조가 아닌 복사를 시킨다.
 
 		}
 		else
@@ -290,7 +489,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 			{
 				Mat mat_resize_for_surf;
 				resize(assist_map, mat_resize_for_surf, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
-				find_homography_start(mat_resize_for_surf, orb_sift_surf_area);
+				homography_start(mat_resize_for_surf, temp_5);
 
 			}
 			catch(cv::Exception& e)
@@ -353,11 +552,12 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 						assist_detection.x =  assist_center.x + assist_detection.x;
 						assist_detection.y =  assist_center.y + assist_detection.y;
 
-						// center로 부터 detection까지 흰색으로(25), 굵기 2
-						line(assist_map, assist_center, assist_detection, Scalar(25), 5); // 옅은 흰색
+						// center로 부터 detection까지 흰색으로(25), 굵기 10
+						line(assist_map, assist_center, assist_detection, Scalar(255), 5);
 
 						// assist_map의 detection부터 detection까지 사각형으로 색을 없앤다. 
 						rectangle(assist_map, assist_detection, assist_detection, Scalar(-255), CV_FILLED);
+						//rectangle(assist_map, assist_detection, assist_detection, Scalar(-255), FILLED);
 
 						++m_a_count;
 					}
