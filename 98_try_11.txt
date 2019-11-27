@@ -17,16 +17,15 @@
 // #include <opencv4/opencv2/xfeatures2d/nonfree.hpp>
 #define RAD2DEG(x) ((x)*180.0/M_PI)
 
-
 using namespace cv;
 using namespace std;
-
 
 // 맵을 위한 변수 선언 //
 // 중심 (10,10), 전체 사이즈 20x20, 50배 확대, 1m = 50px //
 #define assist_enlarge 50
-Mat assist_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
-Mat assist_re_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
+Mat assist_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(100));
+
+Mat assist_re_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(100));
 Point2d assist_center(assist_map.size().width/2, assist_map.size().height/2);
 Point2d assist_axis_x(assist_map.size().width/8,0);
 Point2d assist_axis_y(0,assist_map.size().height/8); 
@@ -34,7 +33,6 @@ Point2d assist_x_rotation, assist_y_rotation;
 
 // surf를 위한 변수 선언 //
 Mat temp_5;
-Mat temp_ready;
 Mat orb_sift_surf_area;
 Point2d rot_cen_for_homo;
 
@@ -53,21 +51,6 @@ int remap_count = 0;
 // 맵 축적을 위한 조건 //
 int acu_map_condition;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // IMU에서 각도를 받는 함수 //
 void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
 {
@@ -80,14 +63,12 @@ void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
 	imu_time_check = msg->imu_time_stamp; // 보낸 시점의 시간을 알아낸다.
 }
 
-
 // scan데이터와 IMU의 전송시점 비교를 위한 함수 //
 double scan_time_check = 0.0;
 void check_scan_stamp(const std_msgs::Float32::ConstPtr& msg)
 {
 	scan_time_check = msg->data;
 }
-
 
 // 포인트 회전을 위한 함수 //
 Point2d point_rotation(Point2d a, float b)
@@ -103,21 +84,13 @@ Point2d point_rotation(Point2d a, float b)
 	return temp_a;
 }
 
-
-
-
-
-
-
-
-
 // Mat 이동 함수 //
 // 좌측 상단으로부터 +x -y 방향으로 1,1 움직이는것 확인함 //
 void mat_translation(Mat img, Mat& dst, Point2d pt)
 {
 	// img를 pt만큼 이동시켜서 dst에 넣는다.
-	Rect rect(Point(0,0), img.size());
-	dst = Mat(img.size(), img.type(), Scalar(0));
+	Rect rect(Point(0,0), img.size()); // 0,0부터 img.size() 까지 그린다.
+	dst = Mat(img.size(), img.type(), Scalar(100));
 	for (int i=0; i<dst.rows; i++)
 	{
 		for (int j=0; j<dst.cols; j++)
@@ -130,11 +103,10 @@ void mat_translation(Mat img, Mat& dst, Point2d pt)
 	}
 }
 
-
 void accumulation_mat(Mat for_surf_1, Mat for_surf_2)
 {
-	Mat src1 = for_surf_1; // 새로운 맵
-	Mat src2 = for_surf_2; // 원본 맵
+	Mat src1 = for_surf_1.clone(); // 새로운 맵
+	Mat src2 = for_surf_2.clone(); // 원본 맵
 
 	if (src1.empty() || src2.empty())
 	{
@@ -203,8 +175,16 @@ void accumulation_mat(Mat for_surf_1, Mat for_surf_2)
 						double x_move = pts2[j].x - pts1[j].x;
 						double y_move = pts2[j].y - pts1[j].y;
 						Mat accumulation_ready;
-						mat_translation(for_surf_1, accumulation_ready, Point2d(x_move,y_move));
-						orb_sift_surf_area = orb_sift_surf_area + accumulation_ready;
+						mat_translation(src1, accumulation_ready, Point2d(x_move,y_move));
+
+						vector<uchar> for_jpg_buff;
+						vector<int> param = vector<int>(2);
+						param[0]=CV_IMWRITE_JPEG_QUALITY;
+						param[1]=95;
+						imencode(".jpg",accumulation_ready,for_jpg_buff,param);
+						Mat for_surf_cal = imdecode(Mat(for_jpg_buff),CV_LOAD_IMAGE_GRAYSCALE);
+
+						orb_sift_surf_area = orb_sift_surf_area + for_surf_cal;
 						printf("moved x,y : %f,%f\n", x_move, y_move);
 						return;
 					}
@@ -217,8 +197,8 @@ void accumulation_mat(Mat for_surf_1, Mat for_surf_2)
 
 void homography_final(Mat for_surf_1, Mat for_surf_2)
 {
-	Mat src1 = for_surf_1; // 새로운 맵
-	Mat src2 = for_surf_2; // 원본 맵
+	Mat src1 = for_surf_1.clone(); // 새로운 맵
+	Mat src2 = for_surf_2.clone(); // 원본 맵
 
 	if (src1.empty() || src2.empty()) {
 		cerr << "Image load failed!" << endl;
@@ -244,8 +224,8 @@ void homography_final(Mat for_surf_1, Mat for_surf_2)
 		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
 	}
 
-	rot_cen_for_homo.x = for_surf_1.size().width/2;
-	rot_cen_for_homo.y = for_surf_1.size().height/2;
+	rot_cen_for_homo.x = src1.size().width/2;
+	rot_cen_for_homo.y = src1.size().height/2;
 
 	vector<double> original_degree, temp_degree;
 	for (int i=0; i<good_matches.size(); i++)
@@ -261,27 +241,36 @@ void homography_final(Mat for_surf_1, Mat for_surf_2)
 	Mat temp_rot_4 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[3]-temp_degree[3])*180.0/M_PI , 1);
 	Mat temp_rot_5 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[4]-temp_degree[4])*180.0/M_PI , 1);
 
-	Mat rot_map_rank_1, rot_map_rank_2, rot_map_rank_3, rot_map_rank_4, rot_map_rank_5;
+	Mat rot_map_rank_1 = Mat(src1.size(), src1.type(), Scalar(100));
+	Mat rot_map_rank_2 = Mat(src1.size(), src1.type(), Scalar(100));
+	Mat rot_map_rank_3 = Mat(src1.size(), src1.type(), Scalar(100));
+	Mat rot_map_rank_4 = Mat(src1.size(), src1.type(), Scalar(100));
+	Mat rot_map_rank_5 = Mat(src1.size(), src1.type(), Scalar(100));
 
-	// for_surf_1를 rot_map_rank_1에 담는다. temp_rot_1를 참조해서, 사이즈, 타입.
-	warpAffine(for_surf_1, rot_map_rank_1, temp_rot_1, for_surf_1.size(), INTER_LINEAR);
-	warpAffine(for_surf_1, rot_map_rank_2, temp_rot_2, for_surf_1.size(), INTER_LINEAR);
-	warpAffine(for_surf_1, rot_map_rank_3, temp_rot_3, for_surf_1.size(), INTER_LINEAR);
-	warpAffine(for_surf_1, rot_map_rank_4, temp_rot_4, for_surf_1.size(), INTER_LINEAR);
-	warpAffine(for_surf_1, rot_map_rank_5, temp_rot_5, for_surf_1.size(), INTER_LINEAR);
+	// src1을 rot_map_rank_1에 담는다. temp_rot_1를 참조해서, 사이즈, 타입.
+	warpAffine(src1, rot_map_rank_1, temp_rot_1, src1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_2, temp_rot_2, src1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_3, temp_rot_3, src1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_4, temp_rot_4, src1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_5, temp_rot_5, src1.size(), INTER_LINEAR);
 
 	accumulation_mat(rot_map_rank_1, orb_sift_surf_area);
+	printf("i did 1\n");
 	accumulation_mat(rot_map_rank_2, orb_sift_surf_area);
+	printf("i did 2\n");
 	accumulation_mat(rot_map_rank_3, orb_sift_surf_area);
+	printf("i did 3\n");
 	accumulation_mat(rot_map_rank_4, orb_sift_surf_area);
+	printf("i did 4\n");
 	accumulation_mat(rot_map_rank_5, orb_sift_surf_area);
+	printf("i did 5\n");
 }
 
 
 void get_rot_mat_and_do_homo(Mat for_surf_1, Mat for_surf_2)
 {
-	Mat src1 = for_surf_1; // 새로운 맵
-	Mat src2 = for_surf_2; // 원본 맵
+	Mat src1 = for_surf_1.clone(); // 새로운 맵
+	Mat src2 = for_surf_2.clone(); // 원본 맵
 
 	if (src1.empty() || src2.empty())
 	{
@@ -307,7 +296,6 @@ void get_rot_mat_and_do_homo(Mat for_surf_1, Mat for_surf_2)
 		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
 	}
 
-
 	// 이미지 2개의 특징점 5개로 두점사이의 거리를 구해서 정수화 한다.
 	vector<int> xy_distance;
 	xy_distance.reserve(6); // 꽉차면 공간을 늘리니까 미리 +1개 해놓는다.
@@ -319,7 +307,7 @@ void get_rot_mat_and_do_homo(Mat for_surf_1, Mat for_surf_2)
 
 	// 얻어낸 정수가 일정하면 이미지가 일치한것이므로
 	// 일정한지 알기 위해서 해당 정수의 빈도를 구한다.
-	int max_distance = pow( (pow(for_surf_1.size().width,2)+pow(for_surf_1.size().height,2)), 0.5 ); // 대각선길이 = 얻을 수 있는 정수의 최대값
+	int max_distance = pow( (pow(src1.size().width,2)+pow(src1.size().height,2)), 0.5 ); // 대각선길이 = 얻을 수 있는 정수의 최대값
 	int repeat_check[max_distance] = {0};
 	for ( int i=0; i<good_matches.size(); i++ )
 	{
@@ -344,7 +332,7 @@ void get_rot_mat_and_do_homo(Mat for_surf_1, Mat for_surf_2)
 			{
 				// 최대 빈도를 가진 인덱스를 찾았다.
 				get_move_distance = i;
-				printf("get_move_distance : %d\n", i);
+				printf("get_move_distance try 1 : %d\n", i);
 				// 인덱스와 일치하는 가장 상위점을 구해서 이동시킨다.
 				for ( int j=0; j<good_matches.size(); j++ )
 				{
@@ -352,7 +340,17 @@ void get_rot_mat_and_do_homo(Mat for_surf_1, Mat for_surf_2)
 					{
 						double x_move = pts2[j].x - pts1[j].x;
 						double y_move = pts2[j].y - pts1[j].y;
-						mat_translation(for_surf_1, temp_ready, Point2d(x_move,y_move));
+						Mat temp_ready;
+						mat_translation(src1, temp_ready, Point2d(x_move,y_move));
+
+						vector<uchar> for_jpg_buff;
+						vector<int> param = vector<int>(2);
+						param[0]=CV_IMWRITE_JPEG_QUALITY;
+						param[1]=95;
+						imencode(".jpg",temp_ready,for_jpg_buff,param);
+						Mat for_surf_cal = imdecode(Mat(for_jpg_buff),CV_LOAD_IMAGE_GRAYSCALE);
+
+						homography_final(for_surf_cal, orb_sift_surf_area);
 						return;
 					}
 				}
@@ -363,8 +361,8 @@ void get_rot_mat_and_do_homo(Mat for_surf_1, Mat for_surf_2)
 
 void homography_start(Mat for_surf_1, Mat for_surf_2)
 {
-	Mat src1 = for_surf_1; // 새로운 맵
-	Mat src2 = for_surf_2; // 원본 맵
+	Mat src1 = for_surf_1.clone(); // 새로운 맵
+	Mat src2 = for_surf_2.clone(); // 원본 맵
 
 	if (src1.empty() || src2.empty()) {
 		cerr << "Image load failed!" << endl;
@@ -395,8 +393,8 @@ void homography_start(Mat for_surf_1, Mat for_surf_2)
 		pts2.push_back(keypoints2[good_matches[i].trainIdx].pt);
 	}
 
-	rot_cen_for_homo.x = for_surf_1.size().width/2;
-	rot_cen_for_homo.y = for_surf_1.size().height/2;
+	rot_cen_for_homo.x = src1.size().width/2;
+	rot_cen_for_homo.y = src1.size().height/2;
 
 	vector<double> original_degree, temp_degree;
 	for (int i=0; i<good_matches.size(); i++)
@@ -413,14 +411,18 @@ void homography_start(Mat for_surf_1, Mat for_surf_2)
 	Mat temp_rot_4 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[3]-temp_degree[3])*180.0/M_PI , 1);
 	Mat temp_rot_5 = getRotationMatrix2D(rot_cen_for_homo, (original_degree[4]-temp_degree[4])*180.0/M_PI , 1);
 
-	Mat rot_map_rank_1, rot_map_rank_2, rot_map_rank_3, rot_map_rank_4, rot_map_rank_5;
+	Mat rot_map_rank_1 = Mat(src1.size(), src1.type(), Scalar(100));
+	Mat rot_map_rank_2 = Mat(src1.size(), src1.type(), Scalar(100));
+	Mat rot_map_rank_3 = Mat(src1.size(), src1.type(), Scalar(100));
+	Mat rot_map_rank_4 = Mat(src1.size(), src1.type(), Scalar(100));
+	Mat rot_map_rank_5 = Mat(src1.size(), src1.type(), Scalar(100));
 
 	// for_surf_1를 rot_map_rank_1에 담는다. temp_rot_1를 참조해서, 사이즈, 타입.
-	warpAffine(for_surf_1, rot_map_rank_1, temp_rot_1, for_surf_1.size(), INTER_LINEAR);
-	warpAffine(for_surf_1, rot_map_rank_2, temp_rot_2, for_surf_1.size(), INTER_LINEAR);
-	warpAffine(for_surf_1, rot_map_rank_3, temp_rot_3, for_surf_1.size(), INTER_LINEAR);
-	warpAffine(for_surf_1, rot_map_rank_4, temp_rot_4, for_surf_1.size(), INTER_LINEAR);
-	warpAffine(for_surf_1, rot_map_rank_5, temp_rot_5, for_surf_1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_1, temp_rot_1, src1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_2, temp_rot_2, src1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_3, temp_rot_3, src1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_4, temp_rot_4, src1.size(), INTER_LINEAR);
+	warpAffine(src1, rot_map_rank_5, temp_rot_5, src1.size(), INTER_LINEAR);
 
 /*
 	namedWindow("rotation_mat_1", WINDOW_AUTOSIZE);
@@ -434,7 +436,6 @@ void homography_start(Mat for_surf_1, Mat for_surf_2)
 	imshow("rotation_mat_3", rot_map_rank_3);
 	imshow("rotation_mat_4", rot_map_rank_4);
 	imshow("rotation_mat_5", rot_map_rank_5);
-*/
 
 	// 매칭을 보여주는 함수 //
 	Mat dst;
@@ -445,27 +446,22 @@ void homography_start(Mat for_surf_1, Mat for_surf_2)
 	namedWindow("dst", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
 	imshow("dst", dst);
 	waitKey(1);
+*/
 
+	vector<uchar> for_jpg_buff;
+	vector<int> param = vector<int>(2);
+	param[0]=CV_IMWRITE_JPEG_QUALITY;
+	param[1]=95;
+	imencode(".jpg",assist_map,for_jpg_buff,param);
+	Mat for_surf_cal = imdecode(Mat(for_jpg_buff),CV_LOAD_IMAGE_GRAYSCALE);
 
 	get_rot_mat_and_do_homo(rot_map_rank_1, temp_5);
-	homography_final(temp_ready, orb_sift_surf_area);
-
 	get_rot_mat_and_do_homo(rot_map_rank_2, temp_5);
-	homography_final(temp_ready, orb_sift_surf_area);
-
 	get_rot_mat_and_do_homo(rot_map_rank_3, temp_5);
-	homography_final(temp_ready, orb_sift_surf_area);
-
 	get_rot_mat_and_do_homo(rot_map_rank_4, temp_5);
-	homography_final(temp_ready, orb_sift_surf_area);
-
 	get_rot_mat_and_do_homo(rot_map_rank_5, temp_5);
-	homography_final(temp_ready, orb_sift_surf_area);
+
 }
-
-
-
-
 
 
 // 맵 그리는 함수 //
@@ -476,9 +472,15 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 	{
 		if ( orb_sift_surf_area.total() == 0 )
 		{
+			vector<uchar> for_jpg_buff;
+			vector<int> param = vector<int>(2);
+			param[0]=CV_IMWRITE_JPEG_QUALITY;
+			param[1]=95;
+			imencode(".jpg",assist_map,for_jpg_buff,param);
+			Mat for_surf_cal = imdecode(Mat(for_jpg_buff),CV_LOAD_IMAGE_GRAYSCALE);
 
 			Mat mat_resize_for_surf;
-			resize(assist_map, mat_resize_for_surf, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
+			resize(for_surf_cal, mat_resize_for_surf, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
 			temp_5 = mat_resize_for_surf.clone(); // 다음 5장과 비교할 맵을 임시로 복사한다.
 			orb_sift_surf_area = mat_resize_for_surf.clone(); // 초기 원본을 만든다. 참조가 아닌 복사를 시킨다.
 
@@ -487,9 +489,17 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 		{
 			try
 			{
+				vector<uchar> for_jpg_buff;
+				vector<int> param = vector<int>(2);
+				param[0]=CV_IMWRITE_JPEG_QUALITY;
+				param[1]=95;
+				imencode(".jpg",assist_map,for_jpg_buff,param);
+				Mat for_surf_cal = imdecode(Mat(for_jpg_buff),CV_LOAD_IMAGE_GRAYSCALE);
+
 				Mat mat_resize_for_surf;
-				resize(assist_map, mat_resize_for_surf, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
+				resize(for_surf_cal, mat_resize_for_surf, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
 				homography_start(mat_resize_for_surf, temp_5);
+				temp_5 = mat_resize_for_surf.clone();
 
 			}
 			catch(cv::Exception& e)
@@ -552,12 +562,8 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 						assist_detection.x =  assist_center.x + assist_detection.x;
 						assist_detection.y =  assist_center.y + assist_detection.y;
 
-						// center로 부터 detection까지 흰색으로(25), 굵기 10
+						// center로 부터 detection까지 흰색으로(255), 굵기 10
 						line(assist_map, assist_center, assist_detection, Scalar(255), 5);
-
-						// assist_map의 detection부터 detection까지 사각형으로 색을 없앤다. 
-						rectangle(assist_map, assist_detection, assist_detection, Scalar(-255), CV_FILLED);
-						//rectangle(assist_map, assist_detection, assist_detection, Scalar(-255), FILLED);
 
 						++m_a_count;
 					}
