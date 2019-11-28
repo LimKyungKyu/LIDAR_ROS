@@ -50,6 +50,9 @@ int remap_count = 0;
 // 맵 축적을 위한 조건 //
 int acu_map_condition;
 
+// 체크포인트 //
+int total_count = 0;
+
 // IMU에서 각도를 받는 함수 //
 void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
 {
@@ -506,7 +509,8 @@ void homography_start(Mat for_surf_1, Mat for_surf_2)
 // 맵 그리는 함수 //
 void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 {
-
+	++total_count;
+	printf("total count %d\n", total_count);
 	if (remap_count > 5)
 	{
 		if ( orb_sift_surf_area.total() == 0 )
@@ -554,7 +558,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 			imshow("map_window", orb_sift_surf_area);
 			waitKey(1);
 
-			imwrite("map.jpg",orb_sift_surf_area);
+			//imwrite("map.jpg",orb_sift_surf_area);
 
 		}
 		// 맵 갱신 //
@@ -599,6 +603,7 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 						// openCV로 line을 생성하기 위한 좌표를 계산하고 확대 시킨다. //
 						assist_detection.x = my_array[m_a_count][1]*cos(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
 						assist_detection.y = -my_array[m_a_count][1]*sin(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
+						//assist_detection = point_rotation(assist_detection, get_yaw*(M_PI/180.0));
 
 						// 맵의 중심으로 이동시킨다. //
 						assist_detection.x =  assist_center.x + assist_detection.x;
@@ -606,6 +611,8 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
 
 						// center로 부터 detection까지 흰색으로(255), 굵기 10
 						line(assist_map, assist_center, assist_detection, Scalar(255), 5);
+						line(assist_map, assist_detection+Point2d(-10.0, -10.0), assist_detection+Point2d(10.0, 10.0), Scalar(255), 3);
+						line(assist_map, assist_detection+Point2d(10.0, -10.0), assist_detection+Point2d(-10.0, 10.0), Scalar(255), 3);
 
 						++m_a_count;
 					}
