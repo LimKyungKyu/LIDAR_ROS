@@ -1,0 +1,19 @@
+1. carto_mapper mapper.launch 실행
+
+2. 터미널에서 rosservice call /finish_trajectory 0 입력
+-맵 기록을 중단한다.
+
+3. 터미널에서 rosservice call /write_state /home/nvidia/원하는이름.bag.pbstream
+
+4. cartographer의 x2.lua를 복사하고 아래 내용을 추가한다.
+test.lua
+TRAJECTORY_BUILDER.pure_localization = true
+POSE_GRAPH.optimize_every_n_nodes = 20
+ 
+5. carto_mapper의 mapper.launch를 복사하고 아래 내용을 추가한다.
+test_local.launch
+-configuration_basename test.lua (lua파일을 4번에서 만든 이름으로 지정한다.)
+-load_state_filename $(arg load_state_filename)
+
+6. 터미널에서 carto_mapper test_local.launch load_state_filename:=${HOME}/저장된것.bag.pbstream
+
