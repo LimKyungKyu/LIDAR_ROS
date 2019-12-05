@@ -1,0 +1,409 @@
+// 맵 1번 그리고 이전맵과 ORB, SIFT, SURF로 비교하여 특징점 추출하기 //
+// 카토그래퍼에서 완전 분리됨 //
+// ORB 예제 : https://github.com/gilbutITbook/006939/blob/master/ch14/matching/main.cpp //
+
+#include "ros/ros.h"
+#include "sensor_msgs/LaserScan.h"
+#include <math.h>
+#include <opencv2/opencv.hpp>
+#include "tf/transform_listener.h"
+#include "project_ros_cpp/get_degree.h"
+#define _USE_MATH_DEFINES
+#include <cstdio>
+#include <iostream>
+#include <unistd.h>
+#include <std_msgs/Float32.h>
+// #include <opencv4/opencv2/xfeatures2d/nonfree.hpp>
+#define RAD2DEG(x) ((x)*180.0/M_PI)
+
+using namespace cv;
+using namespace std;
+
+// 맵을 위한 변수 선언 //
+// 중심 (10,10), 전체 사이즈 20x20, 50배 확대, 1m = 50px //
+#define assist_enlarge 50
+Mat assist_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(100));
+Mat assist_re_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(100));
+Point2d assist_center(assist_map.size().width/2, assist_map.size().height/2);
+Point2d assist_axis_x(assist_map.size().width/8,0);
+Point2d assist_axis_y(0,assist_map.size().height/8); 
+Point2d assist_x_rotation, assist_y_rotation;
+
+// 맵을 그리기 위한 변수 선언 //
+Mat temp_5;
+
+
+// 데이터 저장공간 선언 //
+Point2d assist_detection;
+
+// IMU값을 위한 변수 선언 //
+float get_roll = 0.0;
+float get_pitch = 0.0;
+float get_yaw = 0.0;
+float imu_time_check = 0.0;
+
+// 맵 갱신을 위한 변수 선언 //
+int remap_count = 0;
+Mat mat_resize_half;
+
+// 맵 축적을 위한 변수 선언 //
+int row_col[2] = {0, 0};
+int assist_row_col[2] = {0, 0};
+int temp_5_row_col[2] = {0, 0};
+Mat accumulation_mat;
+int color_reset;
+int color_reset_60;
+
+// 체크포인트 //
+int total_count = 0;
+
+// IMU에서 각도를 받는 함수 //
+void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
+{
+	// msg에서 data를 꺼낸다.
+	// degree, 즉 0 ~ 360의 값을 준다.
+	get_roll = msg->roll;
+	get_pitch = msg->pitch;
+	get_yaw = msg->yaw;
+	//printf("get degree : %f, %f, %f\n", get_roll, get_pitch, get_yaw);
+	imu_time_check = msg->imu_time_stamp; // 보낸 시점의 시간을 알아낸다.
+}
+
+// scan데이터와 IMU의 전송시점 비교를 위한 함수 //
+double scan_time_check = 0.0;
+void check_scan_stamp(const std_msgs::Float32::ConstPtr& msg)
+{
+	scan_time_check = msg->data;
+}
+
+// 포인트 회전을 위한 함수 //
+Point2d point_rotation(Point2d a, float b)
+{
+	// float b 는 라디안이 입력되야한다.
+
+	Point2d temp_a;
+
+	temp_a.x = a.x*cos(b) - a.y*sin(b);
+	temp_a.y = a.x*sin(b) + a.y*cos(b);
+
+	//std::cout<<temp_a.x<<" "<<temp_a.y<< std::endl;
+	return temp_a;
+}
+
+// Mat 이동 함수 //
+// 좌측 상단으로부터 +x -y 방향으로 1,1 움직이는것 확인함 //
+void mat_translation(Mat img, Mat dst, Point2d pt)
+{
+	// img를 pt만큼 이동시켜서 dst에 넣는다.
+	Rect rect(Point(0,0), img.size()); // 0,0부터 img.size() 까지 그린다.
+	for (int i=0; i<dst.rows; i++)
+	{
+		for (int j=0; j<dst.cols; j++)
+		{
+			Point2d dst_pt(j,i);
+			Point2d img_pt = dst_pt - pt;
+			if (rect.contains(img_pt))
+				dst.at<uchar>(dst_pt) = img.at<uchar>(img_pt);
+		}
+	}
+}
+
+// 수동 이진화 또는 색상변화 함수 //
+void change_mat_value(Mat temp_mat, int max, int do_value_1, int do_value_2)
+{
+	for (int i = 0; i < temp_mat.rows; i++)
+	{
+		for (int j = 0; j < temp_mat.cols; j++)
+		{
+			if ( temp_mat.at<uchar>(i, j) < max) 
+			{
+				temp_mat.at<uchar>(i, j) = do_value_1;
+			}
+			else
+			{
+				temp_mat.at<uchar>(i, j) = do_value_2;
+			}
+		}
+	}
+}
+
+// 지우개함수 //
+void erase_mat_value(Mat temp_mat, int max)
+{
+	for (int i = 0; i < temp_mat.rows; i++)
+	{
+		for (int j = 0; j < temp_mat.cols; j++)
+		{
+			if ( temp_mat.at<uchar>(i, j) < max) 
+			{
+				temp_mat.at<uchar>(i, j) = 100;
+			}
+		}
+	}
+}
+
+void find_ewsn(Mat search_map, int i, int j)
+{
+	// .at<uchar>(행,열)
+	int ewsn[4] = {0,0,0,0};
+	bool ewsn_flag[4] = {true, true, true, true};
+	bool again_zero = true;
+
+	for (int check_col=0; check_col<search_map.cols; check_col++)
+	{
+		if ( again_zero )
+		{
+			if ( search_map.at<uchar>(i, check_col) == 255 )
+			{
+				if ( ewsn_flag[0] )
+				{
+					ewsn[0] = check_col; // 처음 찾은 열 기록
+					ewsn_flag[0] = false;
+					//printf("first col %d\n", check_col);
+				}
+
+				for (int start = check_col; start<search_map.cols; start++)
+				{
+					if ( ewsn_flag[1] )
+					{
+						if ( search_map.at<uchar>(i, start) == 255 )
+						{
+							ewsn[1] = start;
+							//printf("last col %d\n", start);
+						}
+						else
+						{
+							ewsn_flag[1] = false;
+						}
+					}
+				}
+				again_zero = false;
+			}
+		}
+
+	}
+
+	again_zero = true;
+	for (int check_row=0; check_row<search_map.rows; check_row++)
+	{
+		if ( again_zero )
+		{
+			if ( search_map.at<uchar>(check_row, j) == 255 )
+			{
+				if ( ewsn_flag[2] )
+				{
+					ewsn[2] = check_row; // 처음 찾은 행 기록
+					ewsn_flag[2] = false;
+					//printf("first row %d\n", check_row);
+				}
+
+				for (int start = check_row; start<search_map.rows; start++)
+				{
+					if ( ewsn_flag[3] )
+					{
+						if ( search_map.at<uchar>(start, j) == 255 )
+						{
+							ewsn[3] = start;
+							//printf("last row %d\n", start);
+						}
+						else
+						{
+							ewsn_flag[3] = false;
+						}
+					}
+				}
+				again_zero = false;
+			}
+		}
+
+	}
+
+	row_col[0] = ewsn[1] - ewsn[0];
+	row_col[1] = ewsn[3] - ewsn[2];
+}
+
+void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
+{
+	
+	if (remap_count >= 10)
+	{
+		printf("accumulation try\n");
+
+		// assist_map의 중심에서 가로, 세로 길이를 구한다.
+		find_ewsn(assist_map, assist_center.x, assist_center.y);
+		assist_row_col[0] = row_col[0]; // 가로길이
+		assist_row_col[1] = row_col[1]; // 세로길이
+	
+		/*
+		// ver 1 //
+		// temp_5의 모든 점에서 가로 세로 길이를 구한다. 일치하면 accumulation_ready에 담는다.
+		Mat accumulation_ready = Mat(assist_map.size(), assist_map.type(), Scalar(100));
+		bool stop_search = true;
+		for (int i = 0; i < temp_5.rows; i++)
+		{
+			for (int j = 0; j < temp_5.cols; j++)
+			{
+				if ( stop_search )
+				{
+					if ( temp_5.at<uchar>(i, j) == 255 ) // i, j는 행,열 이니까 새것의 좌표는 (j,i)
+					{
+						find_ewsn(temp_5,i,j);
+						temp_5_row_col[0] = row_col[0];
+						temp_5_row_col[1] = row_col[1];
+						if ( (assist_row_col[0] == temp_5_row_col[0]) && (assist_row_col[1] == temp_5_row_col[1]) )
+						{
+							cout << "new : " << assist_row_col[0] << ", " << assist_row_col[1] << endl;
+							cout << "old : " << temp_5_row_col[0] << ", " << temp_5_row_col[1] << endl;
+							cout << "x,y location : " << j << ", " << i << endl;
+							mat_translation(assist_map,
+									accumulation_ready,
+									Point2d(j-assist_center.x,i-assist_center.y));
+							printf("yeeeees\n");
+							stop_search = false;
+						}
+					}
+				}
+			}
+		}
+		*/
+
+		// ver 2 //
+		// temp_5의 모든 점에서 가로 세로 길이를 구한다. 일치하면 accumulation_ready에 담는다.
+		Mat accumulation_ready = Mat(assist_map.size(), assist_map.type(), Scalar(100));
+		for (int i = 0; i < temp_5.rows; i++)
+		{
+			for (int j = 0; j < temp_5.cols; j++)
+			{
+				if ( temp_5.at<uchar>(i, j) == 255 ) // i, j는 행,열 이니까 새것의 좌표는 (j,i)
+				{
+					find_ewsn(temp_5,i,j);
+					temp_5_row_col[0] = row_col[0];
+					temp_5_row_col[1] = row_col[1];
+					if ( (assist_row_col[0] == temp_5_row_col[0]) && (assist_row_col[1] == temp_5_row_col[1]) )
+					{
+						cout << "new : " << assist_row_col[0] << ", " << assist_row_col[1] << endl;
+						cout << "old : " << temp_5_row_col[0] << ", " << temp_5_row_col[1] << endl;
+						cout << "x,y location : " << j << ", " << i << endl;
+						mat_translation(assist_map,
+								accumulation_ready,
+								Point2d(j-assist_center.x,i-assist_center.y));
+						printf("yeeeees\n");
+					}
+				}
+			}
+		}
+
+
+
+		if ( accumulation_ready.total() != 0 )
+		{
+			resize(accumulation_ready, mat_resize_half, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
+
+			change_mat_value(mat_resize_half,200,0,5);
+
+			accumulation_mat = accumulation_mat + mat_resize_half;
+
+			if ( color_reset > 10 )
+			{
+				erase_mat_value(accumulation_mat,100+25);
+				color_reset=0;
+			}
+			if ( color_reset_60 > 60 )
+			{
+				change_mat_value(accumulation_mat,200,100,255);
+				color_reset_60=0;
+			}
+			++color_reset;
+			++color_reset_60;
+		}
+
+		moveWindow("accumulation_window", 100, 100); // 모니터의 좌측 상단이 원점이다. (+x -y)
+		namedWindow("accumulation_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+		imshow("accumulation_window", accumulation_mat);
+		waitKey(1);
+
+		temp_5 = assist_map.clone();
+		assist_map = assist_re_map.clone();
+
+		remap_count = 0;
+
+	}
+	else
+	{
+		if( get_yaw == 0.0 )
+		{
+			printf("wait init\n");
+			sleep(0.1);
+		}
+		else
+		{
+			printf("draw try\n");
+			// ydlidar_node가 발생시킨 scan토픽으로부터 전체 데이터 갯수를 획득 //
+			int count = scan->ranges.size();
+
+			// my_array는 m_a_count 변수의 값을 보고 조정한다. //
+			// 매번 수가 변하므로 사용 후 파기하고 다시 선언하는것이 좋다. //
+			double my_array[1000][2];
+
+			// 전체 데이터중 유효한 데이터를 찾는 부분 //
+			int m_a_count = 0; // 유효한 거리값 측정 위한 선언
+			for(int i = 0; i < count; i++)
+			{
+				float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+
+				if( degree<180.0 && degree>-180.0 )
+				{
+					if( isinf(scan->ranges[i]) || scan->ranges[i]<0.1 || scan->ranges[i]>8.0 )
+					{
+					// ydlidar의 datasheet 참조 //
+					// 최소 0.1m, 최대 8m의 측정을 보장한다. //
+					// 무한대, 0.1m미만, 8m초과 값을 버린다. //
+					}
+					else
+					{
+						my_array[m_a_count][0] = degree;
+						my_array[m_a_count][1] = scan->ranges[i];
+
+						// openCV로 line을 생성하기 위한 좌표를 계산하고 확대 시킨다. //
+						assist_detection.x = my_array[m_a_count][1]*cos(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
+						assist_detection.y = -my_array[m_a_count][1]*sin(my_array[m_a_count][0]*M_PI/180.0)*assist_enlarge;
+
+						// 맵의 중심으로 이동시킨다. //
+						assist_detection.x =  assist_center.x + assist_detection.x;
+						assist_detection.y =  assist_center.y + assist_detection.y;
+
+						// center로 부터 detection까지 흰색으로(255), 굵기 5
+						line(assist_map, assist_center, assist_detection, Scalar(255), 5);
+
+						++m_a_count;
+					}
+				}
+			}
+			++remap_count;
+		}
+	}
+
+
+}
+
+int main(int argc, char **argv)
+{
+	// 축적 맵 초기화 //
+	resize(assist_map, accumulation_mat, Size(assist_map.cols*0.5,assist_map.rows*0.5), 0, 0, INTER_AREA);
+
+	ros::init(argc, argv, "draw_map_node"); // ROS 통신을 위한 노드 선언
+	ros::NodeHandle n; // 노드 핸들러 선언
+
+	ros::Subscriber imu_sub = n.subscribe("project_degree", 1, get_degree_from_imu);
+	// degree_publisher.py에서 보내지는 project_degree 토픽을 읽어서 get_degree_from_imu함수를 실행한다.
+
+	ros::Subscriber ydlidar_sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1, scanCallback);
+	// ydlidar_node에서 보내지는 /scan 토픽을 읽어서 scanCallback함수를 실행한다. //
+	ros::Subscriber scan_time_sub = n.subscribe("scan_pub_time_for_imu", 1, check_scan_stamp);
+	// ydlidar의 scan값과 imu의 동기화를 위해서 함수를 실행한다.
+
+	ros::spin();
+	// spin에 의해서 위의 두 노드가 While처럼 무한 루프로 토픽이 들어올때마다 함수를 실행한다. //
+
+	return 0;
+}

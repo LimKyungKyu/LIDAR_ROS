@@ -1,0 +1,356 @@
+// FLD //
+// https://docs.opencv.org/4.1.2/df/d4c/classcv_1_1ximgproc_1_1FastLineDetector.html //
+
+#include "ros/ros.h"
+#include "sensor_msgs/LaserScan.h"
+#include <math.h>
+#include <opencv2/opencv.hpp>
+#include "tf/transform_listener.h"
+#include "project_ros_cpp/get_degree.h"
+#define _USE_MATH_DEFINES
+#include <cstdio>
+#include <iostream>
+#include <unistd.h>
+#include <std_msgs/Float32.h>
+#include <unistd.h>
+#define RAD2DEG(x) ((x)*180.0/M_PI)
+
+using namespace std;
+using namespace cv;
+
+
+// 맵 변수 선언 //
+// 중심(10,10), 1m = 1px, 전체 맵 사이즈 20x20 //
+// 50배 확대, 1m = 50px, 전체 맵 사이즈 1000x1000 //
+#define assist_enlarge 50
+Mat assist_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
+Mat assist_re_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
+Point2i assist_center;
+
+Mat accumulation_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(100));
+Mat accumulation_point_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
+Mat accumulation_point_re_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
+
+Mat draw_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
+Mat draw_re_map(20*assist_enlarge, 20*assist_enlarge, CV_8UC1, Scalar(0));
+
+
+// scan 데이터 저장공간 선언 //
+Point2d assist_detection;
+
+// IMU 변수 선언 //
+float get_roll = 0.0;
+float get_pitch = 0.0;
+float get_yaw = 0.0;
+float imu_time_check = 0.0;
+
+// 드로잉 변수 선언 //
+bool first_map_draw = true;
+double check_percent = 0.0;
+double limit_percent = 0.70;
+double map_point_data[5000][2]; // 데이터를 좌표로 바꾼 공간
+double imu_rot_point[5000][2]; // imu로 회전시킨 좌표
+int m_a_count = 0;
+int get_two_scan = 0;
+vector<Point2i> where_is_it;
+double change_yaw = 0.0;
+
+// IMU에서 각도를 받는 함수 //
+void get_degree_from_imu(const project_ros_cpp::get_degree::ConstPtr& msg)
+{
+	// msg에서 data를 꺼낸다.
+	// degree, 즉 0 ~ 360의 값을 준다.
+	get_roll = msg->roll;
+	get_pitch = msg->pitch;
+	get_yaw = msg->yaw;
+	imu_time_check = msg->imu_time_stamp; // 보낸 시점의 시간을 알아낸다.
+	//printf("get degree : %f, %f, %f\n", get_roll, get_pitch, get_yaw);
+	return;
+}
+
+// Mat 데이터 일치 확인 함수 //
+Point2i mat_percent(Mat original_mat, int total_point_count, double find_pt[5000][2])
+{
+
+	//cout << "check 3" << endl;
+	int point_index = 0;
+	int matching_count = 0;
+	double matching_percent[200];
+
+	//cout << "check 4" << endl;
+	for (int i=(assist_center.x-50); i<=(assist_center.x+50); i++) // assist_center.x-50행 부터
+	{
+		for (int j=(assist_center.y-50); j<=(assist_center.y+50); j++) // assist_center.y+50열 까지 탐색한다.
+		{
+			for (int k=0; k<total_point_count; k++ ) // scan에서 찾아낸 점을 순회한다.
+			{
+				// i행 j열 로부터 find_pt[k][1]행 find_pt[k][0]열 떨어져 있는 점
+				if ( original_mat.at<uchar>(int(i+find_pt[k][1]), int(j+find_pt[k][0])) == 255 )
+				{
+					++matching_count;
+				}
+
+			}
+
+			matching_percent[point_index] = double(matching_count)/double(total_point_count);
+			//cout << matching_percent[point_index] << endl;
+
+			if ( matching_percent[point_index] > limit_percent )
+			{
+				//cout << "check 4" << endl;
+				// 열을 좌표계로 따지면 x, 행을 좌표계로 따지면 y
+				where_is_it[point_index] = Point2i(j,i);
+				//cout << "Index is : " << point_index << " x,y :" << where_is_it[point_index].x <<" "<< where_is_it[point_index].y << endl;
+				++point_index;
+				//cout << "check 5" << endl;
+			}
+
+			matching_count = 0;
+		}
+	}
+
+	//cout << "check 6" << endl;
+	// 만약 한개도 일치하는 점이 없으면 0,0을 반환한다.
+	if ( point_index == 0 )
+	{
+		where_is_it[0] = Point2i(0,0);
+		check_percent = 0.0;
+		return where_is_it[0];
+	}
+	else
+	{
+		// matching_percent, matching_percent+2의 경우 2개의 공간을 탐색하고 max 값이 2번째인 경우 1을 반환한다.
+		// matching_percent, matching_percent+1000의 경우 1000개의 공간을 탐색하고 max 값이 2번째인경우 1을 반환한다.
+		// 즉 반환된 인덱스가 최대값이 저장된 인덱스이다.
+		int xy_index = max_element(matching_percent, matching_percent+point_index)-matching_percent;
+
+		
+		/*
+		cout << "result check percent" << endl;
+		for ( int i=0; i<point_index; i++)
+		{
+			cout << matching_percent[i] <<endl;
+		}
+		cout << "this index is right? : " << xy_index << endl;
+		cout << "this value is right? : " << matching_percent[xy_index] << endl;
+		*/
+
+		check_percent = matching_percent[xy_index];
+		return where_is_it[xy_index];
+	}
+	
+}
+
+// 맵 그리는 함수 //
+void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan)
+{
+	if( get_yaw == 0.0 )
+	{
+		printf("wait init (wait yaw) \n");
+		sleep(0.1);
+	}
+	else
+	{
+		if ( get_two_scan<2 )
+		{
+			//printf("start well\n");
+			int count = scan->ranges.size(); // ydlidar_node가 발행한 scan topic안의 range 수 확인
+
+			for(int i=0; i < count; i++)
+			{
+				float degree = RAD2DEG(scan->angle_min + scan->angle_increment * i);
+				// 해당하는 각도의 거리는 scan->ranges[i]; 이다.
+				if( degree<180.0 && degree>-180.0 )
+				{
+					if( isinf(scan->ranges[i]) || scan->ranges[i]>8.0 || scan->ranges[i]<0.1 )
+					{
+					// ydlidar의 datasheet : 최소 0.1m, 최대 8m의 측정 보장. //
+					// 무한대, 0.1m미만, 8m초과 값을 버린다. //
+					}
+					else
+					{
+						map_point_data[m_a_count][0] = (scan->ranges[i])*cos(degree*M_PI/180.0)*assist_enlarge;
+						map_point_data[m_a_count][1] = -(scan->ranges[i])*sin(degree*M_PI/180.0)*assist_enlarge;
+
+						/*
+						circle(assist_map,
+							Point( int(assist_center.x+map_point_data[m_a_count][0]),
+								int(assist_center.y+map_point_data[m_a_count][1]) ),
+							1, Scalar(255), FILLED);
+						line(assist_map,
+							assist_center,
+							Point( int(assist_center.x+map_point_data[m_a_count][0]),
+								int(assist_center.y+map_point_data[m_a_count][1]) ),
+							Scalar(1), 3);
+						*/
+						++m_a_count;
+					}
+				}
+			}
+			++get_two_scan;
+		}
+		else
+		{
+			if ( m_a_count == 0)
+			{
+				//printf("have no data\n");
+				get_two_scan = 0;
+			}
+			else
+			{
+				if ( first_map_draw )
+				{
+					for ( int i=0; i<m_a_count; i++)
+					{
+						line(draw_map,
+							assist_center,
+							Point( int(assist_center.x+map_point_data[i][0]),
+								int(assist_center.y+map_point_data[i][1]) ),
+							Scalar(1), 3);
+						accumulation_point_map.at<uchar>( int(assist_center.x+map_point_data[i][1]),
+											int(assist_center.y+map_point_data[i][0]) ) = 255;
+					}
+					accumulation_map = accumulation_map + draw_map;
+					draw_map = draw_re_map.clone();
+					get_two_scan = 0;
+					m_a_count = 0;
+					first_map_draw=false;
+					printf("init success !!! \n");
+				}
+				else
+				{
+					double rotation_xy[5000][2];
+					for ( int j=0; j<m_a_count; j++)
+					{
+						rotation_xy[j][0] = map_point_data[j][0]*cos(change_yaw*M_PI/180.0) - map_point_data[j][1]*sin(change_yaw*M_PI/180.0);
+						rotation_xy[j][1] = map_point_data[j][0]*sin(change_yaw*M_PI/180.0) + map_point_data[j][1]*cos(change_yaw*M_PI/180.0);
+					}
+
+					Point2i find_center = mat_percent(accumulation_point_map, m_a_count, rotation_xy);
+					//printf("matching percent is %f\n",check_percent);
+					if ( check_percent > limit_percent )
+					{
+						for ( int k=0; k<m_a_count; k++)
+						{
+							line(draw_map,
+								find_center,
+								Point( int(find_center.x+rotation_xy[k][0]),
+									int(find_center.y+rotation_xy[k][1]) ),
+								Scalar(1), 3);
+							accumulation_point_map.at<uchar>( int(find_center.x+rotation_xy[k][1]),
+												int(find_center.y+rotation_xy[k][0]) ) = 255;
+						}
+
+						accumulation_map = accumulation_map + draw_map;
+						draw_map = draw_re_map.clone();
+						get_two_scan = 0;
+						m_a_count = 0;
+
+						printf("map center moved (%d, %d)\n", find_center.x, find_center.y);
+						printf("at %f degree, map accumulated. \n",change_yaw);
+						namedWindow("point_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+						imshow("point_map_window", accumulation_point_map);
+						namedWindow("accumulation_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+						imshow("accumulation_map_window", accumulation_map);
+						waitKey(100);
+						return;
+
+					}
+
+					for ( double i = 0.0; i <= 360.0; i += 0.5 )
+					{
+						for ( int j=0; j<m_a_count; j++)
+						{
+							rotation_xy[j][0] = map_point_data[j][0]*cos(i*M_PI/180.0) - map_point_data[j][1]*sin(i*M_PI/180.0);
+							rotation_xy[j][1] = map_point_data[j][0]*sin(i*M_PI/180.0) + map_point_data[j][1]*cos(i*M_PI/180.0);
+						}
+
+						find_center = mat_percent(accumulation_point_map, m_a_count, rotation_xy);
+						//printf("matching percent is %f\n",check_percent);
+						if ( check_percent > limit_percent )
+						{
+							change_yaw = i;
+							for ( int k=0; k<m_a_count; k++)
+							{
+								line(draw_map,
+									find_center,
+									Point( int(find_center.x+rotation_xy[k][0]),
+										int(find_center.y+rotation_xy[k][1]) ),
+									Scalar(1), 3);
+								accumulation_point_map.at<uchar>( int(find_center.x+rotation_xy[k][1]),
+													int(find_center.y+rotation_xy[k][0]) ) = 255;
+							}
+
+							accumulation_map = accumulation_map + draw_map;
+							draw_map = draw_re_map.clone();
+							get_two_scan = 0;
+							m_a_count = 0;
+
+							printf("map center moved (%d, %d)\n", find_center.x, find_center.y);
+							printf("at %f degree, map accumulated. \n",i);
+							namedWindow("point_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+							imshow("point_map_window", accumulation_point_map);
+							namedWindow("accumulation_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+							imshow("accumulation_map_window", accumulation_map);
+							waitKey(100);
+							return;
+
+						}
+						else
+						{
+							//printf("%f degree is not matched, find next degree\n",i);
+						}
+					}
+
+					namedWindow("point_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+					imshow("point_map_window", accumulation_point_map);
+					namedWindow("accumulation_map_window", WINDOW_AUTOSIZE); // WINDOW_AUTOSIZE = 할당된 행렬에 딱 맞게 크기를 생성함, 크기조절 불가
+					imshow("accumulation_map_window", accumulation_map);
+					waitKey(100);
+
+					draw_map = draw_re_map.clone();
+					get_two_scan = 0;
+					m_a_count = 0;
+					return;
+
+				}
+			}
+		}
+	}
+}
+
+int main(int argc, char **argv)
+{
+	where_is_it.reserve(10000);
+
+	if ( assist_map.size().width%2 )
+	{
+		// 3x3 행렬 생성시 0,0 부터 2,2 : center는 1,1이지만 int값으로 픽셀에 접근하기 때문에 1.5,1.5는 2,2가 된다. 따라서 -1을 해준다.
+		assist_center.x = (assist_map.size().width/2)-1;
+		assist_center.y = (assist_map.size().height/2)-1;
+	}
+	else
+	{
+		// 4x4 행렬 생성시 0,0 부터 3,3 : 짝수의 경우 중심을 정할 수 없다. 따라서 center를 2,2라고 간주한다.
+		assist_center.x = (assist_map.size().width/2); // 500
+		assist_center.y = (assist_map.size().height/2); // 500
+	}
+
+	ros::init(argc, argv, "draw_map_node"); // ROS 통신을 위한 노드 선언
+	ros::NodeHandle n; // 노드 핸들러 선언
+
+	ros::Subscriber imu_sub = n.subscribe("project_degree", 1, get_degree_from_imu);
+	// degree_publisher.py에서 보내지는 project_degree 토픽을 읽어서 get_degree_from_imu함수를 실행한다.
+
+	ros::Subscriber ydlidar_sub = n.subscribe<sensor_msgs::LaserScan>("/scan", 1, scanCallback);
+	// ydlidar_node에서 보내지는 /scan 토픽을 읽어서 scanCallback함수를 실행한다. //
+
+	ros::spin();
+	// spin에 의해서 위의 두 노드가 While처럼 무한 루프로 토픽이 들어올때마다 함수를 실행한다. //
+
+	return 0;
+}
+
+// 허프변환 3채널
+// LSD 1채널 사용시도 -> 라이센스문제
+// FSD로 대체

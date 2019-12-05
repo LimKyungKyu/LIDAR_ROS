@@ -155,9 +155,8 @@ if __name__=='__main__':
 
 ///////////////////////////////////////////////////////////////////////////////
 권한이 없으면 추가한다.
-vi /etc/passwd : jetbot의 1000을 0으로 수정
 vi /etc/group : root:x:0: root,jetbot 으로 수정
 vi /etc/sudoers : jetbot ALL=(ALL:ALL) ALL 으로 수정
-
+그래도 안되면 최후의 방법으로 vi /etc/passwd : jetbot의 1000을 0으로 수정
 
 
