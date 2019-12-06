@@ -132,7 +132,7 @@ int main(int argc, char **argv)
     // ROS_INFO 라는 ROS 함수를 이용해서 count 변수를 표시해본다.
     // Publish와는 상관없는 부분이다.
 
-    my_cpp_pub.publish(msg); // 메시지를 발행(publish)한다.
+    my_cpp_pub.publish(for_sending); // 메시지를 발행(publish)한다.
 
     loop_rate.sleep(); // 위에서 정한 1hz에 의해서 1초동안 sleep 상태가 된다. (1초 동안 멈춘다.)
 
@@ -210,7 +210,7 @@ source ~/.bashrc
 source 명령어가 잘 안될때가 있으므로 모든 터미널을 반드시 종료하고 다시 켠다.
 roscore # 터미널 1 #
 rosrun my_test_package my_msg_publisher # 터미널 2 #
-rosrun my_test_package my_msg_subscriber # 터미널 3 #
+rosrun my_test_package publishmy_msg_subscriber # 터미널 3 #
 ###############################################################################################################################
 
 

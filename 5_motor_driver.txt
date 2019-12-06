@@ -223,7 +223,6 @@ export PYTHONPATH="${PYTHONPATH}:/home/nvidia/my_control_test/src/my_control/inc
 // 3. Topic을 Subscribe하여 움직이는 Jetbot nano 드라이버 //
 ###############################################################################################################################
 
-
 제어값을 주고받을 .msg 파일 생성
 cd && cd Project_ROS_nano/src/project_ros_python/msg && vi nano_control.msg
 int32 move_message
@@ -249,6 +248,7 @@ left_now_2 = 0.0
 right_now_2 = 0.0
 
 max_speed = 0.2
+change_speed = 0.025
 # 최대 1.0
 # 1.0 이상으로 올라가므로 주의한다.
 
@@ -267,14 +267,14 @@ def callback(data):
 	if ( move_value == 2 ):
 		# 좌회전
 		if (left_now >= max_speed):
-			robot.left_motor.value = max_speed - 0.01
-			left_now = max_speed - 0.01
+			robot.left_motor.value = max_speed - change_speed
+			left_now = max_speed - change_speed
 		elif (left_now <= 0.0):
 			robot.left_motor.value = 0.0
 			left_now = 0.0
 		else:
-			robot.left_motor.value = left_now - 0.01
-			left_now = left_now - 0.01
+			robot.left_motor.value = left_now - change_speed
+			left_now = left_now - change_speed
 
 		if (right_now >= max_speed):
 			robot.right_motor.value = max_speed
@@ -282,11 +282,11 @@ def callback(data):
 		elif (right_now <= 0.0):
 			robot.right_motor.value = 0.0
 			right_now = 0.0
-			robot.right_motor.value = right_now + 0.01
-			right_now = right_now + 0.01
+			robot.right_motor.value = right_now + change_speed
+			right_now = right_now + change_speed
 		else :
-			robot.right_motor.value = right_now + 0.01
-			right_now = right_now + 0.01
+			robot.right_motor.value = right_now + change_speed
+			right_now = right_now + change_speed
 
 	if ( move_value == 3 ):
 		# 우회전
@@ -296,21 +296,21 @@ def callback(data):
 		elif (left_now <= 0.0):
 			robot.left_motor.value = 0.0
 			left_now = 0.0
-			robot.left_motor.value = left_now + 0.01
-			left_now = left_now + 0.01
+			robot.left_motor.value = left_now + change_speed
+			left_now = left_now + change_speed
 		else:
-			robot.left_motor.value = left_now + 0.01
-			left_now = left_now + 0.01
+			robot.left_motor.value = left_now + change_speed
+			left_now = left_now + change_speed
 
 		if (right_now >= max_speed):
-			robot.right_motor.value = max_speed - 0.01
-			right_now = max_speed - 0.01
+			robot.right_motor.value = max_speed - change_speed
+			right_now = max_speed - change_speed
 		elif (right_now <= 0.0):
 			robot.right_motor.value = 0.0
 			right_now = 0.0
 		else:
-			robot.right_motor.value = right_now - 0.01
-			right_now = right_now - 0.01
+			robot.right_motor.value = right_now - change_speed
+			right_now = right_now - change_speed
 
 	if ( move_value == 4 ):
 		# 후진
@@ -325,15 +325,22 @@ def callback(data):
 		right_now = 0.0
 
 	if ( move_value == 6 ):
-		# 회전
-		robot.set_motors(0.2, -0.2)		
-		left_now = 0.2
-		right_now = -0.2
+		# 제자리 우회전
+		robot.set_motors(0.15, -0.15)		
+		left_now = 0.15
+		right_now = -0.15
+
+	if ( move_value == 7 ):
+		# 제자리 좌회전
+		robot.set_motors(-0.15, 0.15)		
+		left_now = -0.15
+		right_now = 0.15
+
 
 def wait_listen():
 	rospy.init_node('move_subscriber_node', anonymous=True)
 	rospy.Subscriber('ros_move_topic', nano_control, callback)
-	time.sleep(0.1)
+	time.sleep(0.01)
 	rospy.spin()
 
 if __name__=='__main__':
@@ -484,7 +491,7 @@ cd && cd project_black && catkin_make
 
 
 
-// 5. 키보드값을 Subscribe 하여 움직이는 Jetbot nano 드라이버 //
+// 5. 키보드값을 Publish하여 움직이게 만드는 Jetbot nano 드라이버 //
 ############################################################################################################################
 
 ANSI코드 활용 : https://godoc.org/github.com/tiborvass/uniline/ansi
@@ -560,4 +567,116 @@ cd && cd Project_ROS_nano/src/project_ros_python/src && chmod +x keyboard_contro
 cd && cd Project_ROS_nano && catkin_make
 
 
+############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 6. imu, TF를 활용하여 원하는 좌표로 이동시키기 //
+############################################################################################################################
+#include <ros/ros.h>
+#include <nav_msgs/MapMetaData.h>
+#include <nav_msgs/OccupancyGrid.h>
+#include "std_msgs/Header.h"
+#include "nav_msgs/MapMetaData.h"
+#include <vector>
+#include <iostream>
+#include <opencv2/opencv.hpp>
+#include <chrono>
+#include "tf/transform_listener.h"
+#include <cstdio>
+
+#define _USE_MATH_DEFINES
+
+
+void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
+
+	std::string start = std::string("/map"); 
+	std::string move = std::string("/base_footprint");
+	double my_RAD2DEG = 180.0/M_PI;
+
+	tf::TransformListener tfl;
+	tfl.waitForTransform(start, move, ros::Time(), ros::Duration(3.0));
+
+	tf::StampedTransform my_test_transform;
+	tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
+
+	double yaw, pitch, roll;
+	my_test_transform.getBasis().getRPY(roll, pitch, yaw);
+	tf::Quaternion q = my_test_transform.getRotation();
+	tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
+
+	std::cout<<"Map 으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
+	std::cout<<"	("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
+	std::cout<<"축 회전 각 [degree] (roll, pitch, yaw)"<<std::endl;
+	std::cout<<"	("<<roll*my_RAD2DEG<<", "<<pitch*my_RAD2DEG<<", "<<yaw*my_RAD2DEG<<")"<< std::endl;
+
+	std_msgs::Header header = msg->header;
+	nav_msgs::MapMetaData info = msg->info;
+	ROS_INFO("Got map %d %d", info.width, info.height);
+	//cv::Mat origin(info.width, info.height, CV_8UC1);
+	std::vector<signed char> data = msg->data;
+
+	cv::Mat temp1 = cv::Mat(data).reshape(1,info.height);
+	cv::Mat temp2;
+	temp1.convertTo(temp2,CV_8U);
+	cv::Mat temp3(temp2.size(),temp2.type(),cv::Scalar(0));
+
+	for (int i=0; i<temp2.rows; i++)
+		for (int j=0; j<temp2.cols; j++)
+			if ( int(temp2.at<unsigned char>(i,j)) >=50 )
+				for ( int k=0; k<=10; k++ )
+					for ( int l=0; l<=10; l++ )
+					{
+						if ( (i+k-5)<0 || (i+k-5)>=temp2.rows || (j+l-5)<0 || (j+l-5)>=temp2.cols ) {}
+						else { temp3.at<unsigned char>( (i+k-5), (j+l-5) )=255; } // need to draw new map
+					}
+
+
+	//cv::namedWindow("image");
+	cv::imshow("image3", temp3);
+	//cv::imshow("image2", temp2);
+	//cv::imshow("image1", temp1);
+	cv::waitKey(100);
+	//cv::destroyWindow("image");
+
+}
+
+int main(int argc, char **argv){
+	ros::init(argc, argv, "map_reader");
+	ros::NodeHandle n;
+
+	ros::Subscriber map_sub = n.subscribe("map",2000,mapCallback); 
+	ros::spin();
+
+	return 0;
+
+}
 ############################################################################################################################
