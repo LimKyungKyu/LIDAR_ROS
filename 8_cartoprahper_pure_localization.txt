@@ -75,52 +75,54 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 	std::cout<<"축 회전 각 [degree] (roll, pitch, yaw)"<<std::endl;
 	std::cout<<"	("<<roll*my_RAD2DEG<<", "<<pitch*my_RAD2DEG<<", "<<yaw*my_RAD2DEG<<")"<< std::endl;
 
-/*
 	// 계산시 cm단위로 변환하고 연산한다.
-	double line_a = sqrt(pow(20,2)+pow(10,2));
+	double target_x = 20.0;
+	double target_y = 10.0;
+	double line_a = sqrt(pow(target_x,2)+pow(target_y,2));
 	double line_b = sqrt(pow(Coordinate_3D.getX()*100,2)+pow(Coordinate_3D.getY()*100,2));
-	double line_c = sqrt(pow(Coordinate_3D.getX()*100-20,2)+pow(Coordinate_3D.getY()*100-10,2));
+	double line_c = sqrt(pow(Coordinate_3D.getX()*100-target_x,2)+pow(Coordinate_3D.getY()*100-target_y,2));
+
+
+	std::cout << atan2(-10,20)*180.0/M_PI << std::endl; // -26
+	std::cout << atan2(-10,-20)*180.0/M_PI << std::endl; // -154
+	std::cout << atan2(10,-20)*180.0/M_PI << std::endl; // 154
+	std::cout << atan2(10,20)*180.0/M_PI << std::endl; // 26
 
 	double middle_yaw;
 	if ( Coordinate_3D.getY() < 0  )
 	{
-		middle_yaw = 180.0 + (atan2(Coordinate_3D.getY()*100,Coordinate_3D.getX()*100)*180.0/M_PI - yaw*180.0/M_PI) ;
+		middle_yaw = 180.0 + (atan2(Coordinate_3D.getY()*100,Coordinate_3D.getX()*100)*180.0/M_PI ) ;
 	}
 	else
 	{
-		middle_yaw = -180.0 + (atan2(Coordinate_3D.getY()*100,Coordinate_3D.getX()*100)*180.0/M_PI - yaw*180.0/M_PI);
+		middle_yaw = -180.0 + (atan2(Coordinate_3D.getY()*100,Coordinate_3D.getX()*100)*180.0/M_PI );
 	}
+
+
 	double finish_yaw_data = (pow(line_a,2)-(pow(line_b,2)+pow(line_c,2)))/(-2*line_b*line_c);
 	double finish_yaw = acos( finish_yaw_data )*180.0/M_PI;
-	double final_degree = fabs( fabs(middle_yaw)-fabs(finish_yaw) )
 
-	// map의x방향 -> 0,0 방향 -> 목표방향
-	double destination_degree = -yaw*180.0/M_PI -middle_yaw +finish_yaw; // map의x방향 -> 0,0 방향 -> 목표방향
-	// 최소로 회전할수 있도록 처리
-	if ( destination_degree > 180.0 )
-	{
-		destination_degree = destination_degree - 360.0;
-	}
-	else if ( destination_degree < -180.0 )
-	{
-		destination_degree = destination_degree + 360.0;
-	}
+	// 직선의 방적식에 의해서 위에 있으면 시계방향, 아래있으면 반시계 방향
+	double where_is_point = target_y - (Coordinate_3D.getY()/Coordinate_3D.getX())*target_x;
+	double destination_degree = 0.0;
+	if ( where_is_point > 0 )
+		destination_degree = middle_yaw - finish_yaw;
+	else
+		destination_degree = middle_yaw + finish_yaw;
 
-	std::cout << middle_yaw << std::endl;
-	std::cout << finish_yaw << std::endl;
-	
+	std::cout << destination_degree << std::endl;
 	
 	ros::NodeHandle nh;
 	ros::Publisher nano_move_pub = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 100);
 	project_ros_cpp::nano_control nano_order;
 	
-	if ( a>0 )
+	if ( yaw*180.0/M_PI < destination_degree )
 	{
 		// 좌회전
 		std::cout << "좌회전" << std::endl;
 		nano_order.move_message = 7;
 	}
-	else if ( destination_degree < yaw*180.0/M_PI  )
+	else if ( yaw*180.0/M_PI > destination_degree  )
 	{
 		// 우회전
 		std::cout << "우회전" << std::endl;
@@ -133,9 +135,8 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 		nano_order.move_message = 5;
 	}
 
-	nano_move_pub.publish(nano_order);
-	ros::spinOnce();
-*/
+	//nano_move_pub.publish(nano_order);
+	//ros::spin();
 
 	std_msgs::Header header = msg->header;
 	nav_msgs::MapMetaData info = msg->info;
