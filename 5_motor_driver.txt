@@ -246,8 +246,9 @@ right_now = 0.0
 left_now_2 = 0.0
 right_now_2 = 0.0
 
-max_speed = 0.2
+max_speed = 0.15
 change_speed = 0.025
+rotation_speed = 0.15
 # 최대 1.0
 # 1.0 이상으로 올라가므로 주의한다.
 
@@ -325,15 +326,15 @@ def callback(data):
 
 	if ( move_value == 6 ):
 		# 제자리 우회전
-		robot.set_motors(0.15, -0.15)		
-		left_now = 0.15
-		right_now = -0.15
+		robot.set_motors(rotation_speed, -rotation_speed)		
+		left_now = rotation_speed
+		right_now = -rotation_speed
 
 	if ( move_value == 7 ):
 		# 제자리 좌회전
-		robot.set_motors(-0.15, 0.15)		
-		left_now = -0.15
-		right_now = 0.15
+		robot.set_motors(-rotation_speed, rotation_speed)		
+		left_now = -rotation_speed
+		right_now = rotation_speed
 
 
 def wait_listen():
@@ -500,8 +501,11 @@ def keyboard_order():
 				print ('Stop !!!')
 				pub.publish(5)
 			elif ( temp_ch == 'i'):
-				print ('Spin !!!')
+				print ('right Spin !!!')
 				pub.publish(6)
+			elif ( temp_ch == 'u'):
+				print ('left Spin !!!')
+				pub.publish(7)
 		elif (temp_ch == '\x03'):
 			print ('Bye Bye, ByeBye ya')
 			sys.exit(1)
@@ -565,5 +569,184 @@ cd && cd Project_ROS_nano && catkin_make
 
 // 6. imu, TF를 활용하여 원하는 좌표로 이동시키기 //
 ############################################################################################################################
+#include <ros/ros.h>
+#include <iostream>
+#include "tf/transform_listener.h"
+#include "project_ros_cpp/nano_control.h"
+#include <unistd.h>
+
+
+double target_x = 0.0; // 목표위치 x
+double target_y = 50.0; // 목표위치 y
+
+void find_yaw()
+{
+
+	ros::NodeHandle nh;
+	ros::Publisher nano_move_pub = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
+
+	tf::TransformListener tfl;
+	tf::StampedTransform my_test_transform;
+
+	std::string start = std::string("/map"); 
+	std::string move = std::string("/base_footprint");
+
+	while (ros::ok())
+	{		
+		tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
+		tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
+
+		double yaw, pitch, roll;
+		my_test_transform.getBasis().getRPY(roll, pitch, yaw);
+		tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
+
+		/*
+		std::cout << atan2(-10,20)*180.0/M_PI << std::endl; // -26
+		std::cout << atan2(-10,-20)*180.0/M_PI << std::endl; // -154
+		std::cout << atan2(10,-20)*180.0/M_PI << std::endl; // 154
+		std::cout << atan2(10,20)*180.0/M_PI << std::endl; // 26
+		*/
+
+		double middle_yaw;
+		if ( Coordinate_3D.getY() < 0  )
+		{
+			middle_yaw = 180.0 + (atan2(Coordinate_3D.getY()*100,Coordinate_3D.getX()*100)*180.0/M_PI ) ;
+		}
+		else
+		{
+			middle_yaw = -180.0 + (atan2(Coordinate_3D.getY()*100,Coordinate_3D.getX()*100)*180.0/M_PI );
+		}
+
+		// (0,0) , 현재위치, 목표위치 //
+		// 제 2 코사인 법칙 //
+		double line_a = sqrt(pow(target_x,2)+pow(target_y,2));
+		double line_b = sqrt(pow(Coordinate_3D.getX()*100,2)+pow(Coordinate_3D.getY()*100,2));
+		double line_c = sqrt(pow(Coordinate_3D.getX()*100-target_x,2)+pow(Coordinate_3D.getY()*100-target_y,2));
+
+		double finish_yaw_data = (pow(line_a,2)-(pow(line_b,2)+pow(line_c,2)))/(-2*line_b*line_c);
+		double finish_yaw = acos( finish_yaw_data )*180.0/M_PI;
+
+		// 직선의 방적식 : (0,0)과 현재위치 //
+		// 직선의 위에 있으면 시계방향, 아래있으면 반시계 방향 //
+		double where_is_point = target_y - (Coordinate_3D.getY()/Coordinate_3D.getX())*target_x;
+		double destination_degree = 0.0;
+		if ( where_is_point > 0 )
+			destination_degree = middle_yaw - finish_yaw;
+		else
+			destination_degree = middle_yaw + finish_yaw;
+
+		if ( destination_degree <-180.0 )
+			destination_degree = destination_degree + 360.0;
+		else if	( destination_degree > 180.0 )
+			destination_degree = destination_degree - 360.0;
+
+		std::cout<<"Map 으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
+		std::cout<<"	("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
+		std::cout<<"축 회전 각 [degree] (roll, pitch, yaw)"<<std::endl;
+		std::cout<<"	("<<roll*180.0/M_PI<<", "<<pitch*180.0/M_PI<<", "<<yaw*180.0/M_PI<<")"<< std::endl;
+		std::cout << destination_degree << std::endl;
+		
+		project_ros_cpp::nano_control nano_order;
+		if ( (yaw*180.0/M_PI>destination_degree-5) && (yaw*180.0/M_PI<destination_degree+5) )
+		{
+			// 회전 정지
+			std::cout << "회전 정지" << std::endl;
+			nano_order.move_message = 5;
+			nano_move_pub.publish(nano_order);
+			break;
+		}		
+		else if ( yaw*180.0/M_PI < destination_degree )
+		{
+			// 좌회전
+			std::cout << "좌회전" << std::endl;
+			nano_order.move_message = 7;
+			nano_move_pub.publish(nano_order);
+			sleep(0.1);
+			nano_order.move_message = 5;
+			nano_move_pub.publish(nano_order);
+			sleep(0.5);
+		}
+		else if ( yaw*180.0/M_PI > destination_degree  )
+		{
+			// 우회전
+			std::cout << "우회전" << std::endl;
+			nano_order.move_message = 6;
+			nano_move_pub.publish(nano_order);
+			sleep(0.1);
+			nano_order.move_message = 5;
+			nano_move_pub.publish(nano_order);
+			sleep(0.5);
+		}
+	}
+}
+
+void move_nano()
+{
+	ros::NodeHandle nh;
+	ros::Publisher nano_move_pub = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
+
+	tf::TransformListener tfl;
+	tf::StampedTransform my_test_transform;
+
+	std::string start = std::string("/map"); 
+	std::string move = std::string("/base_footprint");
+
+	project_ros_cpp::nano_control nano_order;
+
+	double target_distance = 0.0;
+	while (ros::ok())
+	{
+		tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
+		tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
+		tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
+
+		target_distance = sqrt( pow(Coordinate_3D.getX()*100-target_x,2) + pow(Coordinate_3D.getY()*100-target_y,2) );
+
+		std::cout<<"Map 으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
+		std::cout<<"	("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
+		std::cout<< target_distance <<std::endl;
+
+		if ( target_distance > 30 )
+		{
+			std::cout << "직진" << std::endl;
+			nano_order.move_message = 1;	
+			nano_move_pub.publish(nano_order);
+		}
+		else
+		{
+			std::cout << "직진 정지" << std::endl;
+			nano_order.move_message = 5;
+			nano_move_pub.publish(nano_order);
+			break;	
+		}
+	}
+}
+
+int main(int argc, char **argv)
+{
+	ros::init(argc, argv, "find_yaw");
+
+	target_x = 0.0;
+	target_y = 50.0;
+	find_yaw();
+	move_nano();
+
+	target_x = 50.0;
+	target_y = 50.0;
+	find_yaw();
+	move_nano();
+
+	target_x = 100.0;
+	target_y = 100.0;
+	find_yaw();
+	move_nano();
+
+	target_x = 0.0;
+	target_y = 0.0;
+	find_yaw();
+	move_nano();
+
+	return 0;
+}
 
 ############################################################################################################################

@@ -18,6 +18,10 @@ float32 roll
 float32 pitch
 float32 yaw
 float32 imu_time_stamp
+float32 acc_x
+float32 acc_y
+float32 acc_z
+
 
 토픽명 : project_degree
 
@@ -133,14 +137,21 @@ def get_from_raw():
 			mean_count += 1
 
 		yaw = yaw*180.0/MY_PI/do_number
-		roll = roll*180.0/MY_PI
-		pitch = pitch*180.0/MY_PI
+		roll = roll*180.0/MY_PI/do_number
+		pitch = pitch*180.0/MY_PI/do_number
 
+		for_pub.roll = float(roll)
+		for_pub.pitch = float(pitch)
 		for_pub.yaw = float(yaw)
+
+		for_pub.yaw = float(acc_x)
+		for_pub.yaw = float(acc_y)
+		for_pub.yaw = float(acc_z)
+
 		for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC)) # mean : 0.2sec
 		pub.publish(for_pub)
-
 		print('yaw : %f' % yaw)
+
 
 
 if __name__=='__main__':
