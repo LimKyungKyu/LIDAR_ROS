@@ -1,7 +1,6 @@
 // 1. waveshare jetbot nano 모터 드라이버 분리 시키기 //
 ###############################################################################################################################
 
-
 // 파이썬에 드라이버 설치 //
 python3 -m pip install traitlets
 python3 -m pip install Adafruit_MotorHAT
@@ -388,22 +387,6 @@ export PYTHONPATH="${PYTHONPATH}:/home/nvidia/Project_ROS_nano/src/project_ros_p
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // 4. IMU(MPU6050) 데이터를 Subscribe 하여 움직이는 Jetbot nano 드라이버 //
 ############################################################################################################################
 
@@ -452,19 +435,6 @@ cd && cd project_black && catkin_make
 
 
 ############################################################################################################################
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -566,13 +536,7 @@ if __name__=='__main__':
 cd && cd Project_ROS_nano/src/project_ros_python/src && chmod +x keyboard_control.py
 cd && cd Project_ROS_nano && catkin_make
 
-
 ############################################################################################################################
-
-
-
-
-
 
 
 
@@ -601,82 +565,5 @@ cd && cd Project_ROS_nano && catkin_make
 
 // 6. imu, TF를 활용하여 원하는 좌표로 이동시키기 //
 ############################################################################################################################
-#include <ros/ros.h>
-#include <nav_msgs/MapMetaData.h>
-#include <nav_msgs/OccupancyGrid.h>
-#include "std_msgs/Header.h"
-#include "nav_msgs/MapMetaData.h"
-#include <vector>
-#include <iostream>
-#include <opencv2/opencv.hpp>
-#include <chrono>
-#include "tf/transform_listener.h"
-#include <cstdio>
 
-#define _USE_MATH_DEFINES
-
-
-void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
-
-	std::string start = std::string("/map"); 
-	std::string move = std::string("/base_footprint");
-	double my_RAD2DEG = 180.0/M_PI;
-
-	tf::TransformListener tfl;
-	tfl.waitForTransform(start, move, ros::Time(), ros::Duration(3.0));
-
-	tf::StampedTransform my_test_transform;
-	tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
-
-	double yaw, pitch, roll;
-	my_test_transform.getBasis().getRPY(roll, pitch, yaw);
-	tf::Quaternion q = my_test_transform.getRotation();
-	tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
-
-	std::cout<<"Map 으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
-	std::cout<<"	("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
-	std::cout<<"축 회전 각 [degree] (roll, pitch, yaw)"<<std::endl;
-	std::cout<<"	("<<roll*my_RAD2DEG<<", "<<pitch*my_RAD2DEG<<", "<<yaw*my_RAD2DEG<<")"<< std::endl;
-
-	std_msgs::Header header = msg->header;
-	nav_msgs::MapMetaData info = msg->info;
-	ROS_INFO("Got map %d %d", info.width, info.height);
-	//cv::Mat origin(info.width, info.height, CV_8UC1);
-	std::vector<signed char> data = msg->data;
-
-	cv::Mat temp1 = cv::Mat(data).reshape(1,info.height);
-	cv::Mat temp2;
-	temp1.convertTo(temp2,CV_8U);
-	cv::Mat temp3(temp2.size(),temp2.type(),cv::Scalar(0));
-
-	for (int i=0; i<temp2.rows; i++)
-		for (int j=0; j<temp2.cols; j++)
-			if ( int(temp2.at<unsigned char>(i,j)) >=50 )
-				for ( int k=0; k<=10; k++ )
-					for ( int l=0; l<=10; l++ )
-					{
-						if ( (i+k-5)<0 || (i+k-5)>=temp2.rows || (j+l-5)<0 || (j+l-5)>=temp2.cols ) {}
-						else { temp3.at<unsigned char>( (i+k-5), (j+l-5) )=255; } // need to draw new map
-					}
-
-
-	//cv::namedWindow("image");
-	cv::imshow("image3", temp3);
-	//cv::imshow("image2", temp2);
-	//cv::imshow("image1", temp1);
-	cv::waitKey(100);
-	//cv::destroyWindow("image");
-
-}
-
-int main(int argc, char **argv){
-	ros::init(argc, argv, "map_reader");
-	ros::NodeHandle n;
-
-	ros::Subscriber map_sub = n.subscribe("map",2000,mapCallback); 
-	ros::spin();
-
-	return 0;
-
-}
 ############################################################################################################################
