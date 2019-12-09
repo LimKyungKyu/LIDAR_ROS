@@ -79,7 +79,6 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 	std::cout << atan2(-10,-20)*180.0/M_PI << std::endl; // -154
 	std::cout << atan2(10,-20)*180.0/M_PI << std::endl; // 154
 	std::cout << atan2(10,20)*180.0/M_PI << std::endl; // 26
-	*/
 
 	double middle_yaw;
 	if ( Coordinate_3D.getY() < 0  )
@@ -136,6 +135,7 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 
 	nano_move_pub.publish(nano_order);
 	ros::spin();
+	*/
 
 	std_msgs::Header header = msg->header;
 	nav_msgs::MapMetaData info = msg->info;
