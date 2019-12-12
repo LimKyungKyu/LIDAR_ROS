@@ -52,7 +52,7 @@ sudo apt-get install python-rosinstall python-rosinstall-generator python-wstool
 https://google-cartographer-ros.readthedocs.io/en/latest/compilation.html
 
 sudo apt-get install -y python-wstool python-rosdep ninja-build
-mkdir Google_Cartographer && cd Google_Cartographer && wstool init src #Tag1#
+cd && mkdir Google_Cartographer && cd Google_Cartographer && wstool init src #Tag1#
 wstool merge -t src https://raw.githubusercontent.com/googlecartographer/cartographer_ros/master/cartographer_ros.rosinstall
 wstool update -t src
 src/cartographer/scripts/install_proto3.sh
@@ -69,8 +69,7 @@ catkin_make_isolated --install --use-ninja
 	일반적인 catkin_make와 다르게 catkin_make_isolated로 설치한다.
 
 source devel_isolated/setup.bash
-echo "source ~/Google_Cartographer/devel_isolated/setup.bash" >> ~/.bashrc
-source ~/.bashrc
+echo "source ~/Google_Cartographer/devel_isolated/setup.bash" >> ~/.bashrc && source ~/.bashrc
 ###############################################################################################################################
 
 
@@ -90,26 +89,24 @@ rosrun turtlesim turtle_teleop_key # 터미널 3 #
 
 // 2-2. Google_Cartographer + YDLIDAR X2 켜보기// 
 ###############################################################################################################################
-cd && mkdir -p carto_with_yd/src && cd carto_with_yd/src
+cd && mkdir -p project_black/src && cd project_black/src
 git clone https://github.com/YDLIDAR/ydlidar_ros.git
 cd ydlidar_ros && git checkout X2
 	ydlidar_ros 폴더로 이동후 X2 제품에 해당하는 X2 브랜치로 이동하는 git 명령어
-cd && cd carto_with_yd && catkin_make
+cd && cd project_black && catkin_make
 
-source devel/setup.bash
-echo "source ~/carto_with_yd/devel/setup.bash" >> ~/.bashrc
-source ~/.bashrc
+echo "source ~/project_black/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
 	source ~/.bashrc는 터미널을 재부팅하지 않아도 .bashrc 파일을 갱신 시켜 현재 터미널에서 사용 가능하게 만든다.
 	예제를 따라하다 보면 여러개의 ROS를 사용하는 경우 echo가 여러번 입력되서 setup.bash가 현재 필요한 ROS로 설정되지 않았을 수 있다.
 	cd && sudo vi .bashrc 입력해서 가장 마지막줄에 현재 사용할 setup, 즉 source ~/carto_with_yd/devel/setup.bash 가 있는지 확인한다. # Tag2 #
 
-cd && cd carto_with_yd/src
+cd && cd project_black/src
 git clone https://github.com/msadowski/x2_cartographer.git
 git submodule update --init
 
-sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
+cd && cd project_black && sudo rosdep install --from-paths src --ignore-src --rosdistro melodic -r -y
 	모든 의존성 패키지를 포함시키는 명령어이다.
-	현재 ~/carto_with_yd/src안에 cartographer가 없고 ~/Google_Cartographer에 깔려있으니까 이 폴더를 활용하려고 위명령어를 입력한다.
+	현재 ~/project_black/src안에 cartographer가 없고 ~/Google_Cartographer에 깔려있어서 이 폴더를 활용하려고 위명령어를 입력한다.
 
 roscd ydlidar/startup
 sudo chmod 0777 *
@@ -123,18 +120,18 @@ RViz 켜지면 좌측 하단의 ADD클릭
 Map 추가 Topic - /map 클릭
 LaserScan 추가  Topic - /scan 클릭
 
-~/carto_with_yd/src/x2_cartographer/carto_mapper/config/x2.lua
+~/project_black/src/x2_cartographer/carto_mapper/config/x2.lua
 TRAJECTORY_BUILDER_2D.min_range = 0.1 // 최소 감지 거리
 TRAJECTORY_BUILDER_2D.max_range = 10 // 최대 감지 거리
 	x2.lua의 설정은 수정후 catkin_make 필요없다.
 
-~/carto_with_yd/src/ydlidar_ros/src/ydlidar_client.cpp
-if(degree > -180 && degree< 180) // -180도 ~ 180도 안에 있는 정보를 표시해준다.
-	수정 후 catkin_make 필요하다.
-	cd && cd carto_with_yd && catkin_make
+~/project_black/src/ydlidar_ros/src/ydlidar_client.cpp
+	코드 수정 : int count = scan->ranges.size();
+	코드 수정 : if(degree > -180 && degree< 180) // -180도 ~ 180도 안에 있는 정보를 표시해준다.
+	cd && cd project_black && catkin_make
 
-~/carto_with_yd/src/ydlidar_ros/src/ydlidar_node.cpp
-	드라이버와 같다고 보면 된다. scan에 대한 중요 정보가 들어있다.
+~/project_black/src/ydlidar_ros/src/ydlidar_node.cpp
+	드라이버와 같다고 보면 된다.
 ###############################################################################################################################
 
 
@@ -207,20 +204,8 @@ roslaunch : 한번에 복수개의 노드를 실행하는 명령어
 
 
 
-2-4. Google에서 녹화해놓은 카토그래퍼 예제 불러오기 (딱히 안해봐도 됨)
-###############################################################################################################################
-source install_isolated/setup.bash
-wget -P ~/Downloads https://storage.googleapis.com/cartographer-public-data/bags/backpack_2d/cartographer_paper_deutsches_museum.bag
-roslaunch cartographer_ros demo_backpack_2d.launch bag_filename:=${HOME}/Downloads/cartographer_paper_deutsches_museum.bag
-위치 : cd ~/catkin_ws/src/cartographer_ros/cartographer_ros/launch
-실행시 라이더의 수평각도가 변하면 안된다.
-###############################################################################################################################
 
-
-
-
-
-2-5. waveshare, 게임패드로 Jetson nano 움직이는 예제
+2-4. Jetson nano 조립 및 초기화
 ###############################################################################################################################
 You need to prepare an SD card which should be at least 64G 
 User Etcher software to write image (unzip above) to SD card.
@@ -229,7 +214,7 @@ User Etcher software to write image (unzip above) to SD card.
 건전지만 먼저 충전한다.
 충전이 완료되면 충전기의 전원을 반드시 뽑는다.
 
-아직 합체하지 말고 나노의 전원 입력 커넥터(미니 usb, 휴대폰 충전단자)로 먼저 킨다.
+아직 합체하지 말고 나노만 따로 전원 입력 커넥터(미니 usb, 휴대폰 충전단자)로 킨다.
 나노의 초기 아이디, 비밀번호 : jetbot
 와이파이를 연결하고 나노의 전원을 끈다.
 나노 전원 입력 커넥터(미니 usb, 휴대폰 충전단자)를 반드시 분리한다.
@@ -243,40 +228,37 @@ OLED에 IP주소가 나온다.
 내부아이피주소 입력, 외부포트 8282
 내부포트 8888
 이제 http://<젯봇의 Public IP>:8282 이렇게 접속 가능하다.
+###############################################################################################################################
 
-# 기본 젯봇 움직이기 #
-~/Notebooks/basic_motion/
-basic_motion.ipynb
 
-# 원격 조종 예제 #
-~/Notebooks/teleoperation/
-teleoperation.ipynb
-Connect USB adapter to PC
 
-게임패드 설정
-1. PC/PS3/Andorid mode (초기값)
-2. XBox 360 mode. 
-예제는 XBox 360모드로 진행한다.
-홈 버튼을 7초동안 누른다.
-left joystick is mapped to axes[0] and axes[1]
-right joystick is mapped to axes[2] and axes[3]
 
-# 학습된 충돌방지 예제 #
-1. 벽에 대한 데이터 수집
-~/Notebooks/collision_avoidance/
-data_collection.ipynb	
-2. 학습 ( Neural network 사용 )
-tain_model.ipynb
-3. 실행
-live_demo.ipynb
 
-# 오브젝트 트래킹 #
-~/Notebooks/object_following/ 폴더에 아래의 미리 학습된 자료 다운로드
-https://drive.google.com/file/d/1RnNBHPDphIOWwHCSfeMCWQ7XN3w3tKFD/view
-( 충돌 방지로도 잘 학습된 자료이다. )
-live_demo.ipynb
 
-# 라인 트래킹 #
-~/Notebooks/road_following/
-data-collection.ipynb
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+3. ROS 환경 구축
+###############################################################################################################################
+cd && cd project_black/src && catkin_create_pkg project_ros_cpp std_msgs roscpp rospy tf 
+cd && cd project_black/src && catkin_create_pkg project_ros_python std_msgs roscpp rospy tf
 ###############################################################################################################################

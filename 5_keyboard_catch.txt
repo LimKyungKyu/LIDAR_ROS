@@ -1,0 +1,230 @@
+// 1-1. 키보드 입력을 캐치하기 //
+###############################################################################################################################
+cd && vi test.py
+python3 -m pip install keyboard
+///////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+import time
+import keyboard
+while True:
+	try:
+		if keyboard.is_pressed('q'):
+			print('You Pressed q Key!')
+			time.sleep(0.01)
+		else: 
+			pass 
+	except: 
+		break
+///////////////////////////////////////////////////////
+###############################################################################################################################
+
+
+
+
+
+
+
+
+// 1-2. 방향키 값 캐치 //
+###############################################################################################################################
+cd && vi test.py
+python3 -m pip install keyboard
+///////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+import time
+import keyboard
+while True:
+	try:
+		if keyboard.is_pressed("up arrow"):
+			print('You Pressed Up Key!')
+			robot.set_motors(0.3, 0.6)
+			time.sleep(1.0)
+			robot.stop()
+		else: 
+			pass 
+	except: 
+		break
+///////////////////////////////////////////////////////
+###############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+// 1-3. 방향키 값 캐치 (저수준 생성) //
+###############################################################################################################################
+///////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+import os
+import sys    
+import termios
+import fcntl
+import time
+
+def getch():
+  fd = sys.stdin.fileno()
+
+  oldterm = termios.tcgetattr(fd)
+  newattr = termios.tcgetattr(fd)
+  newattr[3] = newattr[3] & ~termios.ICANON & ~termios.ECHO
+  termios.tcsetattr(fd, termios.TCSANOW, newattr)
+
+  oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
+  fcntl.fcntl(fd, fcntl.F_SETFL, oldflags | os.O_NONBLOCK)
+
+  try:        
+    while 1:            
+      try:
+        c = sys.stdin.read(3)
+        break
+      except IOError: pass
+  finally:
+    termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
+    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
+  return c
+
+while True:
+	hello = getch()
+	if hello == 'i':
+		print("123")
+	elif hello == '\x1b[A':
+		print("ooo")
+	time.sleep(1)
+///////////////////////////////////////////////////////
+###############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 1-4. 결과적으로 키보드 입력으로 사용할것 //
+###############################################################################################################################
+cd && cd project_black/src/project_ros_python/src && vi keyboard_control.py
+///////////////////////////////////////////////////////
+#!/usr/bin/python3
+
+import rospy
+import time
+from project_ros_python.msg import nano_control
+import tty, termios, sys
+import re
+
+def getchar():
+
+	fd = sys.stdin.fileno()
+	old_settings = termios.tcgetattr(fd)
+	try:
+		tty.setraw(sys.stdin.fileno())
+		ch = sys.stdin.read(1)
+	finally:
+		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+	return ch
+   
+
+
+def keyboard_order():
+
+	while not rospy.is_shutdown():
+		ch = getchar()
+		temp_ch = ch
+		if (re.findall('[\w]',temp_ch)):
+			print ('You pressed : ',temp_ch,'. that is not arrow.')
+			if ( temp_ch == 'o'):
+				print ('Stop !!!')
+				pub.publish(5)
+			elif ( temp_ch == 'i'):
+				print ('right Spin !!!')
+				pub.publish(6)
+			elif ( temp_ch == 'u'):
+				print ('left Spin !!!')
+				pub.publish(7)
+		elif (temp_ch == '\x03'):
+			print ('Bye Bye, ByeBye ya')
+			sys.exit(1)
+		else:
+			for i in range(2):
+				ch = getchar()
+				temp_ch = temp_ch + ch
+			if (temp_ch == '\x1b[A'):
+				print ('You pressed up arrow\n')
+				pub.publish(1)
+			elif (temp_ch == '\x1b[D'):
+				print ('You pressed left arrow\n')
+				pub.publish(2)
+			elif (temp_ch == '\x1b[C'):
+				print ('You pressed right arrow\n')
+				pub.publish(3)
+			elif (temp_ch == '\x1b[B'):
+				print ('You pressed down arrow\n')
+				pub.publish(4)
+
+		time.sleep(0.1)
+
+if __name__=='__main__':
+	try:
+		rospy.init_node('move_keyboard_node', anonymous=True)
+		pub = rospy.Publisher('ros_move_topic', nano_control, queue_size=1)
+		keyboard_order()
+
+	except rospy.ROSInterruptException:
+		pass
+///////////////////////////////////////////////////////
+https://godoc.org/github.com/tiborvass/uniline/ansi
+cd && cd project_black/src/project_ros_python/src && sudo chmod +x keyboard_control.py
+
+cd && cd project_black/src/project_ros_python/msg && vi nano_control.msg
+int32 move_message
+
+cd && cd project_black/src/project_ros_python && vi CMakeLists.txt
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  tf
+  message_generation
+)
+
+ add_message_files(
+   FILES
+   get_degree.msg
+   nano_control.msg
+ )
+
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+ )
+
+catkin_package(
+#  INCLUDE_DIRS include
+  LIBRARIES project_ros_python
+  CATKIN_DEPENDS roscpp rospy std_msgs tf message_runtime
+#  DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+
+cd && cd project_black/src/project_ros_python/src && chmod +x keyboard_control.py
+cd && cd project_black && catkin_make
+###############################################################################################################################

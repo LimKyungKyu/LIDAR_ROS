@@ -1,31 +1,50 @@
-// 1. python 패키지와 노드 만들기 //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// 1-1-1. 직접 python 패키지와 노드, msg파일 만들기 //
+###############################################################################################################################
+cd && cd ros_test/src && catkin_create_pkg python_test_package std_msgs rospy
+###############################################################################################################################
 
 
 
-1-1-1. 직접 python 패키지와 노드 만들기
-cd && cd ros_test/src && catkin_create_pkg my_python_package std_msgs rospy
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 
-1-1-2. Publisher(값 보내기)와 Subscriber(값 받기)를 만들기 위한 수정
-cd ~/ros_test/src/my_python_package && vi package.xml
+
+// 참고 : 기본 메세지 형식 활용하기 //
+###############################################################################################################################
+기본 msg 파일( http://wiki.ros.org/msg )을 활용하려면 아래와 같은 헤더들을 추가해서 활용한다.
+from std_msgs.msg import String
+from std_msgs.msg import Int32
+...
+
+예를들어 기본 msg를 활용해서 문자를 보내려면 아래와 같이 활용 가능하다.
+from std_msgs.msg import String # 헤더추가
+pub = rospy.Publisher('my_topic_2', String, queue_size=10) #String이 msg 형식이다.
+hello_str = "hello world" # 메세지를 담을 hello_str 변수 생성
+pub.publish(hello_str) #변수를 publish
+###############################################################################################################################
+
+
+
+
+
+
+
+
+
+
+// 1-1-2. Publisher(값 보내기)와 Subscriber(값 받기) 만들기 //
+###############################################################################################################################
+cd ~/ros_test/src/python_test_package && vi package.xml
 <build_depend>message_generation</build_depend>
 <exec_depend>message_runtime</exec_depend>
 (비슷한 위치에 두줄 추가)
 
-cd && cd ros_test/src/my_python_package && vi CMakeLists.txt
+cd && cd ros_test/src/python_test_package && vi CMakeLists.txt
 find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   message_generation
 )
-
- add_message_files(
-   FILES
-   my_msg_setting_python.msg
- )
 
  generate_messages(
    DEPENDENCIES
@@ -34,7 +53,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 catkin_package(
 #  INCLUDE_DIRS include
-   LIBRARIES my_python_package
+   LIBRARIES python_test_package
    CATKIN_DEPENDS rospy std_msgs message_runtime
 #  DEPENDS system_lib
 )
@@ -43,32 +62,90 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
 )
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+###############################################################################################################################
 
 
 
-1-1-3. 메세지 파일 만들기
-cd ~/ros_test/src/my_python_package
-mkdir msg && cd msg && vi my_msg_setting_python.msg
+
+
+
+
+
+
+
+// 1-1-3. 메세지 파일 만들기 //
+###############################################################################################################################
+cd ~/ros_test/src/python_test_package
+mkdir msg && cd msg && vi my_msg_file_python.msg
 int32 abcd
-위의 한줄을 입력하고 저장한다. (int32형으로 data를 선언한다는 뜻)
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+위 내용 입력하고 저장한다. (int32형으로 abcd를 선언한다는 뜻)
+
+.msg파일을 사용하기 위해서 CMakeLists를 수정해야한다.
+vi ~/ros_test/src/python_test_package/CMakeLists.txt
+find_package(catkin REQUIRED COMPONENTS
+  rospy
+  std_msgs
+  message_generation
+)
+
+ add_message_files(FILES my_msg_file_python.msg) # 반드시 generate_messages 위에 선언한다.
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+ )
+
+catkin_package(
+#  INCLUDE_DIRS include
+   LIBRARIES python_test_package
+   CATKIN_DEPENDS rospy std_msgs message_runtime
+#  DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+###############################################################################################################################
 
 
 
-1-1-4. Publisher
-cd && cd ~/ros_test/src/my_python_package/src && vi my_python_publisher.py
-############################################################
-#!/usr/bin/env python3
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 1-1-4. Publisher //
+###############################################################################################################################
+cd && cd ~/ros_test/src/python_test_package/src && vi my_python_publisher.py
+/////////////////////////////////////////////////////////////////////////////////////////////////
+#!/usr/bin/python3
 
 import rospy
-from my_python_package.msg import my_msg_setting_python
+from python_test_package.msg import my_msg_file_python
+# python_test_package의 msg폴더에서 my_msg_file_python.msg를 호출한다는 뜻
 
 def talker():
+
+	# node를 만든다.
 	rospy.init_node('my_publisher_node', anonymous=True)
-	pub = rospy.Publisher('python_topic', my_msg_setting_python, queue_size=10)
+
+	# Topic명은 my_topic_2이며 my_msg_file_python형식을 활용하고 queue는 10개이다.
+	pub = rospy.Publisher('my_topic_2', my_msg_file_python, queue_size=10)
 	count = 1
-	rate = rospy.Rate(1)
+	rate = rospy.Rate(1) # 1hz 슬립 시키기위해 선언
+
+	# 그냥 while선언시 control + c 눌러서 꺼지지 않으므로
+	# while을 not rospy.is_shutdown(): 으로 선언한다.
 	while not rospy.is_shutdown():
 		rospy.loginfo(count)
 		pub.publish(count)
@@ -81,64 +158,78 @@ if __name__=='__main__':
 		talker()
 	except rospy.ROSInterruptException:
 		pass
-############################################################
-노드명은 my_publisher_node이고 토픽명은 python_topic 이다.
-여러가지 변수를 담으려면 my_msg_setting_python.msg에 아래 내용을 입력하고
+/////////////////////////////////////////////////////////////////////////////////////////////////
+sudo chmod +x my_python_publisher.py
+여러가지 변수를 담으려면 my_msg_file_python.msg에 아래 내용을 입력하고
 float64 x
 float64 y
 float64 z
-for_send = my_msg_setting_python()
+
+for_send = my_msg_file_python()
 for_send.x = 1.1
 for_send.y = 2.2
 for_send.z = 3.3
 pub.publish(for_send) 하면 된다.
-
-기본 msg 파일( http://wiki.ros.org/msg )을 활용하려면 아래와 같은 헤더들을 추가해서 활용한다.
-from std_msgs.msg import String
-from std_msgs.msg import Int32
-...
-
-예를들어 문자를 기본 msg를 활용해서 보내려면 아래와 같이 활용 가능하다.
-from std_msgs.msg import String # 헤더추가
-pub = rospy.Publisher('python_topic', String, queue_size=10) #String이 msg 형식이다.
-hello_str = "hello world" # 메세지를 담은 변수 생성
-pub.publish(hello_str) #변수를 publish
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+###############################################################################################################################
 
 
 
-1-1-5.Subscriber 작성
-vi my_python_subscriber.py
-############################################################
-#!/usr/bin/env python
+
+
+
+
+
+
+
+
+// 1-1-5. Subscriber //
+###############################################################################################################################
+cd && cd ~/ros_test/src/python_test_package/src && vi my_python_subscriber.py
+/////////////////////////////////////////////////////////////////////////////////////////////////
+#!/usr/bin/env python3
 
 import rospy
-from my_python_package.msg import my_msg_setting_python
+from python_test_package.msg import my_msg_file_python
+
 
 def callback(data):
-	rospy.loginfo("I heard %d", data.abcd)
+	# data에서 .abcd를 꺼낸다.
+	rospy.loginfo("callback : I heard %d", data.abcd)
+
+def callback2(data):
+	# data에서 .abcd를 꺼낸다.
+	rospy.loginfo("callback2 : I heard %d", data.abcd)
+
 
 def listener():
+
 	rospy.init_node('my_subscriber_node', anonymous=True)
-	rospy.Subscriber('python_topic', String, callback)
+
+	# 방법 1 #
+	# Topic명 my_topic_2를 수신하면 callback함수를 호출한다.
+	rospy.Subscriber('my_topic_2', my_msg_file_python, callback)
+	rospy.Subscriber('my_topic_2', my_msg_file_python, callback2)
 	rospy.spin()
+
+	# spin에 의해서 Subscriber로 선언된 모든 callback함수가 While루프를 돌게된다.
+	# spin아래의 코드는 실행되지 않는다.
+	# 즉 rospy.spin()함수를 호출시 callback함수와 callback2함수가 동시에 while루프를 돌게된다.
+
 
 if __name__=='__main__':
 	listener()
-############################################################
-메세지를 callback함수의 data에 저장하고 데이터를 꺼낸다.
+/////////////////////////////////////////////////////////////////////////////////////////////////
 my_msg_setting_python 메세지는 int32 abcd로 저장되어 있으므로 abcd로 호출한다.
 여러개 들어있으면
 temp1 = data.x
 temp2 = data.y
-temp3 = data.z 처럼 뽑아낸다.
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+temp3 = data.z 처럼 꺼낸다.
+###############################################################################################################################
 
 
 1-1-6. 빌드
-chmod +x my_python_publisher.py my_python_subscriber.py
+###############################################################################################################################
+cd && cd ~/ros_test/src/python_test_package/src && sudo chmod +x my_python_publisher.py my_python_subscriber.py
 cd ~/ros_test && catkin_make
-echo "source ~/ros_test/devel/setup.bash" >> ~/.bashrc
-source ~/.bashrc (source ~/.bashrc만 모든 터미널에서 수행한다.)
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+echo "source ~/ros_test/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
+###############################################################################################################################

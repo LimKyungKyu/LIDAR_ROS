@@ -1,18 +1,9 @@
-// 1. IMU Publish //
+// 1. IMU (MPU6050) Publish //
 ############################################################################################################################
-참조 : https://github.com/Tijndagamer/mpu6050
 
-각도를 주고받을 .msg 파일 생성
-cd && cd Project_ROS_nano/src/project_ros_python/msg && vi get_degree.msg
-float32 roll
-float32 pitch
-float32 yaw
-float32 imu_time_stamp
-
-토픽명 : project_degree
-
-
-cd && cd Project_ROS_nano/src/project_ros_python/src && vi degree_publisher.py
+참조 1 : https://github.com/Tijndagamer/mpu6050
+참조 2 : https://github.com/thisisG/MPU6050-I2C-Python-Class
+cd && cd project_black/src/project_ros_python/src && vi mpu_6050.py
 ///////////////////////////////////////////////////////////////////////////////
 #!/usr/bin/python3
 
@@ -294,6 +285,8 @@ class MPU6050:
 exp_minus = 0.0
 def init_imu_yaw():
 
+	print("init start !!!")
+
 	sensor = MPU6050(0x68)
 	exp_count = 0
 	global exp_minus
@@ -324,7 +317,7 @@ def get_from_raw():
 	global exp_minus
 	yaw = 0.0
 
-	sending_time = time.time()
+	#sending_time = time.time()
 
 	while not rospy.is_shutdown():
 		accel_data = sensor.get_accel_data()
@@ -353,7 +346,7 @@ def get_from_raw():
 		for_pub.roll = float(roll)
 		for_pub.pitch = float(pitch)
 		for_pub.yaw = float(yaw)
-		for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC))
+		#for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC))
 
 		#print("%f" % exp_minus)
 		#print("%s" % roll)
@@ -361,79 +354,37 @@ def get_from_raw():
 		#print("%s" % yaw)
 		#print("%s" % dt)
 		#print("")
-		if ( (time.time()-sending_time) > 0.2 ):
-			pub.publish(for_pub)
-			#print("i send degree yaw %f" % for_pub.yaw)
-			sending_time = time.time()
+		#if ( (time.time()-sending_time) > 0.01 ):
+		#	pub.publish(for_pub)
+		#	print("i send degree yaw %f" % for_pub.yaw)
+		#	sending_time = time.time()
+
+		pub.publish(for_pub)
 	
 
+start_value = 0
+def start_sign(not_use):
+	global start_value
+	start_value = 1
 	
 
 if __name__=='__main__':
+
 	try:
-		rospy.init_node('project_degree_node', anonymous=True)
-		pub = rospy.Publisher('project_degree', get_degree, queue_size=1)
-		init_imu_yaw()
-		get_from_raw()
+		rospy.init_node('mpu_6050_node', anonymous=True)
+		pub = rospy.Publisher('mpu_6050_degree', get_degree, queue_size=1)
+		rospy.Subscriber('project_degree', get_degree, start_sign)
+		while not rospy.is_shutdown():
+			print("wait init")
+			time.sleep(0.1)
+			while (start_value):
+				init_imu_yaw()
+				get_from_raw()
 
 	except rospy.ROSInterruptException:
 		pass
 ///////////////////////////////////////////////////////////////////////////////
 
-
-CMakeLists.txt 세팅
-cd && cd Project_ROS_nano/src/project_ros_python && vi CMakeLists.txt
-
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  rospy
-  std_msgs
-  tf
-  message_generation
-)
-# message_generation 추가
-
- add_message_files(
-   FILES
-   get_degree.msg
- )
-# get_degree.msg 추가
-
- generate_messages(
-   DEPENDENCIES
-   std_msgs
- )
-# generate_messages 항목 전체 추가
-
-catkin_package(
-#  INCLUDE_DIRS include
-   LIBRARIES project_ros_python
-   CATKIN_DEPENDS roscpp rospy std_msgs tf message_runtime
-#  DEPENDS system_lib
-)
-# CATKIN_DEPENDS에 message_runtime 추가
-
-package.xml 세팅
-cd && cd Project_ROS_nano/src/project_ros_python && vi package.xml
-<build_depend>message_generation</build_depend>
-<exec_depend>message_runtime</exec_depend>
-
-
-cd && cd Project_ROS_nano/src/project_ros_python/src && chmod +x degree_publisher.py
-cd && cd Project_ROS_nano && catkin_make
-
-
-참고자료
-1. i2c 찾는방법
-sudo i2cdetect -y -r 0
-sudo i2cdetect -y -r 1
-
-2. mpu6050 dmp 연산
-git clone https://github.com/thisisG/MPU6050-I2C-Python-Class.git
-
-3. LSM303DLHC
-http://www.devicemart.co.kr/goods/view?no=1177212
-python3 -m pip install adafruit-circuitpython-lsm303dlh-mag
-
+cd && cd project_black/src/project_ros_python/src && sudo chmod +x mpu_6050.py
 
 ###############################################################################################################################

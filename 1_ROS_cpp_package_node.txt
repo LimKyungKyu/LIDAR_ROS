@@ -1,17 +1,17 @@
-// 1-1-1. 직접 cpp 패키지와 노드 만들기 //
+// 1-1-1. 직접 cpp 패키지와 노드, msg파일 만들기 //
 ###############################################################################################################################
 https://cafe.naver.com/openrt/3043
 
-cd && mkdir -p ros_test/src && cd ros_test/src && catkin_create_pkg my_cpp_package std_msgs roscpp
+cd && mkdir -p ros_test/src && cd ros_test/src && catkin_create_pkg cpp_test_package std_msgs roscpp
 	지금부터는 새롭게 패키지를 생성하는 과정이기 때문에 CMakeLists.txt등을 수정해야한다.
 	따라서 기존에 있던 자료를 수정하는것보다 새 폴더에서 따라하기를 권장함.
 
-	위 명령어를 수행하면 ros_test/src 아래 my_cpp_package 폴더가 생긴다.
-	my_cpp_package를 만들고 의존하는 패키지로 std_msgs와 roscpp를 추가한다는 뜻이다.
+	위 명령어를 수행하면 ros_test/src 아래 cpp_test_package 폴더가 생긴다.
+	cpp_test_package를 만들고 의존하는 패키지로 std_msgs와 roscpp를 추가한다는 뜻이다.
 	std_msgs : ROS의 표준 메시지 패키지
 	roscpp : c/c++을 사용하기 위한 라이브러리
-		catkin_create_pkg my_cpp_package 까지만 입력해서 패키지 생성 후 package.xml 에 직접 입력해도 된다.
-	cd ~/my_cpp_test/src/my_cpp_package 해서 생성된 폴더들을 살펴본다.
+		catkin_create_pkg cpp_test_package 까지만 입력해서 패키지 생성 후 package.xml 에 직접 입력해도 된다.
+	cd ~/ros_test/src/cpp_test_package 해서 생성된 폴더들을 살펴본다.
 		include : 인클루드 폴더, 빌드 후 헤더가 여기에 담긴다.
 		src : 소스코드 폴더
 		CMakeLists.txt : 빌드 설정 파일
@@ -21,16 +21,52 @@ cd && mkdir -p ros_test/src && cd ros_test/src && catkin_create_pkg my_cpp_packa
 
 
 
-
-// 1-1-2. Publisher(값 보내기)와 Subscriber(값 받기)를 만들기 위한 수정 //
+// 참고 : 기본 메세지 형식 활용하기 //
 ###############################################################################################################################
-vi ~/ros_test/src/my_cpp_package/package.xml
+기본 메세지 형식을 사용하려면 msg파일을 만들 필요없이
+헤더에 #include <std_msgs/Float32.h>를 추가한다.
+#include <std_msgs/Int32.h> 등등... 활용 가능하다.
+목록은 cd /opt/ros/melodic/include/std_msg에 들어있다.
+
+#include "ros/ros.h" 
+#include <std_msgs/Float32.h>
+int main(int argc, char **argv)
+{
+	ros::Publisher my_cpp_pub = nh.advertise<std_msgs::Float32>("my_package_msg", 100);
+	std_msgs::Float32 for_sending;
+	for_sending.data = 99.9;
+	my_cpp_pub.publish(for_sending);
+}
+기본형식은 data 한개밖에 못넣으므로 msg파일을 직접 생성하는것이 편리하다.
+
+기본 메세지 형식으로 subscribe하려면 아래처럼 선언한다.
+#include "ros/ros.h" 
+#include <std_msgs/Float32.h>
+
+void msgCallback(const std_msgs::Float32::ConstPtr& msg)
+{
+	코드내용
+}
+int main(int argc, char **argv)
+{
+	ros::Subscriber my_cpp_sub = nh.subscribe("my_package_msg", 100, msgCallback);
+	ros::spin(); 또는 ros::spinOnce();
+}
+
+###############################################################################################################################
+
+
+
+
+
+// 1-1-2. Publisher(값 보내기)와 Subscriber(값 받기) 만들기 //
+###############################################################################################################################
+vi ~/ros_test/src/cpp_test_package/package.xml
 <build_depend>message_generation</build_depend>
 <exec_depend>message_runtime</exec_depend>
 (비슷한 내용이 담긴 위치에 두줄을 추가한다.)
 
-vi ~/ros_test/src/my_cpp_package/CMakeLists.txt
-
+vi ~/ros_test/src/cpp_test_package/CMakeLists.txt
 # find_package를 아래와 같이 수정한다. #
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -39,20 +75,21 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 # catkin_package위에 아래 내용을 추가한다. #
-add_message_files(FILES my_msg_setting.msg)
 generate_messages(DEPENDENCIES std_msgs)
+
 add_executable(my_cpp_publisher src/my_cpp_publisher.cpp)
 target_link_libraries(my_cpp_publisher ${catkin_LIBRARIES})
-add_dependencies(my_cpp_publisher my_cpp_test_package_generate_messages_cpp)
+add_dependencies(my_cpp_publisher cpp_test_package_generate_messages_cpp)
+
 add_executable(my_cpp_subscriber src/my_cpp_subscriber.cpp)
 target_link_libraries(my_cpp_subscriber ${catkin_LIBRARIES})
-add_dependencies(my_cpp_subscriber my_cpp_test_package_generate_messages_cpp)
+add_dependencies(my_cpp_subscriber cpp_test_package_generate_messages_cpp)
 
 # catkin_package의 주석을 아래와 같이 해제한다. #
 catkin_package(
   #INCLUDE_DIRS include
-  LIBRARIES my_test_package
-  CATKIN_DEPENDS roscpp std_msgs
+  LIBRARIES cpp_test_package
+  CATKIN_DEPENDS roscpp std_msgs message_runtime
   #DEPENDS system_lib
 )
 
@@ -61,15 +98,10 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
 )
-	include : include 폴더이다. 빌드 후 헤더가 여기에 담긴다.
-	${catkin_INCLUDE_DIRS} : ROS 기본 헤더 경로
 
 # 설명 #
 add_executable(my_cpp_publisher src/my_cpp_publisher.cpp)는
 my_cpp_publisher.cpp를 빌드해서 my_cpp_publisher를 만들라는 뜻이다.
-
-add_message_files(FILES my_msg_setting.msg)는
-my_msg_setting.msg를 노드가 사용해야 하기 때문에 빌드할때 포함하란 뜻이다.
 ###############################################################################################################################
 
 
@@ -78,12 +110,44 @@ my_msg_setting.msg를 노드가 사용해야 하기 때문에 빌드할때 포�
 
 // 1-1-3. 메세지 파일 만들기 //
 ###############################################################################################################################
-cd ~/ros_test/src/my_cpp_package
-mkdir msg && cd msg && vi my_msg_setting.msg
+cd ~/ros_test/src/cpp_test_package
+mkdir msg && cd msg && vi my_msg_file_cpp.msg
 int32 data
 time stamp
 위 내용 입력하고 저장한다. (int32형으로 data를 선언한다는 뜻)
+
+.msg파일을 사용하기 위해서 CMakeLists를 수정해야한다.
+vi ~/ros_test/src/cpp_test_package/CMakeLists.txt
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  std_msgs
+  message_generation
+)
+
+add_message_files(FILES my_msg_file_cpp.msg) # 반드시 generate_messages 위에 선언한다.
+generate_messages(DEPENDENCIES std_msgs)
+
+add_executable(my_cpp_publisher src/my_cpp_publisher.cpp)
+target_link_libraries(my_cpp_publisher ${catkin_LIBRARIES})
+add_dependencies(my_cpp_publisher cpp_test_package_generate_messages_cpp)
+
+add_executable(my_cpp_subscriber src/my_cpp_subscriber.cpp)
+target_link_libraries(my_cpp_subscriber ${catkin_LIBRARIES})
+add_dependencies(my_cpp_subscriber cpp_test_package_generate_messages_cpp)
+
+catkin_package(
+  #INCLUDE_DIRS include
+  LIBRARIES cpp_test_package
+  CATKIN_DEPENDS roscpp std_msgs message_runtime
+  #DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
 ###############################################################################################################################
+
 
 
 
@@ -91,13 +155,14 @@ time stamp
 
 // 1-1-4. Publisher //
 ###############################################################################################################################
-cd ~/ros_test/src/my_cpp_package/src
+cd ~/ros_test/src/cpp_test_package/src
 vi my_cpp_publisher.cpp 하고 아래 내용 입력
 /////////////////////////////////////////////////////////////////////////////////////////////////
 #include "ros/ros.h" // ROS 기본 헤더파일
-#include "my_cpp_package/my_msg_setting.h"
-// my_msg_setting.h는 현재 없는 헤더이다. 3-1-3에서 .msg를 만들어놨으므로 빌드후 생성될 예정이다.
-// 이름은 CMakeLists.txt 에서 추가한 add_message_files(FILES my_msg_setting.msg)과 이름이 같아야 한다.
+#include "cpp_test_package/my_msg_file_cpp.h"
+// my_msg_file_cpp.msg파일명과 같게 my_msg_file_cpp.h 파일을 등록한다.
+// 빌드 후 ~/ros_test/devel/include/cpp_test_package 에 생성된다.
+
 
 int main(int argc, char **argv)
 {
@@ -107,21 +172,36 @@ int main(int argc, char **argv)
 
   // Publisher 선언
   // my_cpp_package 패키지의 my_msg_setting.msg파일을 이용한 my_cpp_pub을 선언한다.
-  // Topic명은 "my_package_msg" 이며, 큐(queue) 사이즈를 100개로 설정한다는 뜻이다.
-  ros::Publisher my_cpp_pub = nh.advertise<my_cpp_package::my_msg_setting>("my_package_msg", 100);
+  // Topic명은 "my_topic_1" 이며, 큐(queue) 사이즈를 100개로 설정한다는 뜻이다.
+  ros::Publisher my_cpp_pub = nh.advertise<cpp_test_package::my_msg_file_cpp>("my_topic_1", 100);
 
 
+  ros::Rate loop_rate(1);
   // 루프 주기를 설정한다.
   // 1이니까 1hz, 1초간격으로 반복한다.
   // 10은 10Hz를 말하는 것으로, 1초에 10번 반복한다는 뜻. 즉 0.1초 간격으로 반복시킨다는뜻이다.
-  ros::Rate loop_rate(1);
+  // 그러나 잘 안쓰이므로 아래방법을 활용한다.
+  /*
+  #include <chrono>
+
+  std::chrono::system_clock::time_point time_start;
+  std::chrono::duration<double> limit_sec;
+
+  time_start = std::chrono::system_clock::now();
+  limit_sec = std::chrono::system_clock::now() - time_start;
+
+  while ( limit_sec.count() < 0.3 )
+  {
+	limit_sec = std::chrono::system_clock::now() - mean_start;
+  }
+  */
 
   int count = 0; // 메시지로 보낼 값 선언, int32형
 
   while (ros::ok())
   {
-    my_cpp_package::my_msg_setting for_sending;
-    // my_msg_setting.msg에서 지정한 형식으로 msg를 선언, int32형이다.
+    cpp_test_package::my_msg_file_cpp for_sending;
+    // my_msg_setting.msg에서 지정한 형식으로 for_sending을 선언, int32형이다.
 
     for_sending.data = count;
     // count를 for_sending.data에 저장했다
@@ -132,7 +212,9 @@ int main(int argc, char **argv)
     // ROS_INFO 라는 ROS 함수를 이용해서 count 변수를 표시해본다.
     // Publish와는 상관없는 부분이다.
 
-    my_cpp_pub.publish(for_sending); // 메시지를 발행(publish)한다.
+    my_cpp_pub.publish(for_sending);
+    // 메시지를 발행(publish)한다.
+    // publisher는 ros::spin(), ros::spinOnce() 가 필요없다.
 
     loop_rate.sleep(); // 위에서 정한 1hz에 의해서 1초동안 sleep 상태가 된다. (1초 동안 멈춘다.)
 
@@ -143,36 +225,32 @@ int main(int argc, char **argv)
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
 여러가지 변수를 담으려면
-my_msg_setting.msg 내용을 아래처럼 3줄 입력하고
+my_msg_setting.msg 내용을 아래처럼 여러줄 입력하고
 int32 x
 int32 y
 int32 z
+
 my_cpp_package::my_msg_setting for_sending; 를 선언하고 아래처럼 입력하면 된다.
 for_sending.x = 1;
 for_sending.y = 2;
-for_sending.z = 3; 
-
-기본 메세지 형식을 사용하려면 msg파일을 만들 필요없이
-헤더에 #include <std_msgs/Float32.h>를 추가하고 퍼블리셔를 아래처럼 선언한다.
-ros::Publisher my_cpp_pub = nh.advertise<std_msgs::Float32>("my_package_msg", 100);
-std_msgs::Float32 for_sending;로 변수를 선언하고 아래처럼 값을 입력해서 publsih한다.
-msg.data = 99.9;
-기본형식은 data 한개밖에 못넣으므로 msg파일을 직접 생성하는것이 편리하다.
+for_sending.z = 3;
 ###############################################################################################################################
+
+
 
 
 
 // 1-1-5. Subscriber //
 ###############################################################################################################################
-cd ~/ros_test/src/my_cpp_package/src
+cd ~/ros_test/src/cpp_test_package/src
 vi my_cpp_subscriber.cpp 하고 아래 내용 입력
 /////////////////////////////////////////////////////////////////////////////////////////////////
 #include "ros/ros.h"
-#include "my_cpp_package/my_msg_setting.h"
+#include "cpp_test_package/my_msg_file_cpp.h"
 
 // 메시지 콜백함수를 사용자가 직접 만들어본다.
 // 전달 받은 메세지는 my_cpp_publisher.cpp에서 보낸 for_sending.data = count; 이다.
-void msgCallback(const my_cpp_package::my_msg_setting::ConstPtr& msg)
+void msgCallback(const cpp_test_package::my_msg_file_cpp::ConstPtr& msg)
 {
   ROS_INFO("recieve msg: %d", msg->data); // msg에서 data를 꺼낸다.
 }
@@ -183,34 +261,38 @@ int main(int argc, char **argv) // 노드 메인 함수
   ros::NodeHandle nh;
 
   // Subscriber 선언
-  // my_cpp_publisher.cpp에서 Topic명 my_package_msg로 보낸 메세지 100개의 큐를 msgCallback으로 보낸다.
-  ros::Subscriber my_cpp_sub = nh.subscribe("my_package_msg", 100, msgCallback);
-
+  // my_cpp_publisher.cpp에서 Topic명 my_topic_1로 보낸 메세지를 100개까지(Queue) 저장 가능하다.
+  // 메세지를 받을때마다 msgCallback함수를 호출한다.
+  ros::Subscriber my_cpp_sub = nh.subscribe("my_topic_1", 100, msgCallback);
   ros::spin();
-  // 메시지가 수신될때마다 msgCallback를 실행하도록 하는 함수이다.
-  // ros가 꺼질때까지 무한 반복한다.
+
+  // ros::spin();을 호출하면 모든 ros::Subscriber의 callback 함수를 While 루프 돌린다.
+  // 예를들어 ros::Subscriber my_cpp_sub_2 = nh.subscribe("my_topic_1", 100, msgCallback_2);라는 선언을 추가로 했다면
+  // msgCallback 함수와 msgCallback_2 함수가 각각 while루프를 돌게된다.
+  // ros::spin();은 ros::shutdown(); 명령으로 종료 가능하나 모든 노드가 종료되므로 주의한다.
+
+  // ros::spinOnce();를 호출하면 모든 ros::Subscriber의 callback 함수를 단 1번 호출하고
+  // ros::spinOnce(); 이후의 코드를 진행한다.
 
   return 0;
-
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
-기본 메세지 형식으로 subscribe하려면 헤더에
-#include <std_msgs/Float32.h>를 추가하고 함수선언을 아래처럼 변경한다.
-void msgCallback(const std_msgs::Float32::ConstPtr& msg)
 ###############################################################################################################################
 
 
 
-// 1-1-6. 빌드 //
+
+
+
+// 1-1-7. 빌드 //
 ###############################################################################################################################
-cd ~/my_cpp_test && catkin_make
-echo "source ~/my_cpp_test/devel/setup.bash" >> ~/.bashrc
-source ~/.bashrc
+cd ~/ros_test && catkin_make
+cd && echo "source ~/ros_test/devel/setup.bash" >> ~/.bashrc && source ~/.bashrc
 
 source 명령어가 잘 안될때가 있으므로 모든 터미널을 반드시 종료하고 다시 켠다.
 roscore # 터미널 1 #
-rosrun my_test_package my_msg_publisher # 터미널 2 #
-rosrun my_test_package publishmy_msg_subscriber # 터미널 3 #
+rosrun cpp_test_package my_cpp_publisher # 터미널 2 #
+rosrun cpp_test_package my_cpp_subscriber  # 터미널 3 #
 ###############################################################################################################################
 
 

@@ -1,5 +1,10 @@
-// 1. IMU Publish //
+// 1. IMU (LSM303DLHC) Publish //
 ############################################################################################################################
+
+0. 권한 설정
+vi /etc/sudoers : jetbot ALL=(ALL:ALL) ALL 으로 수정
+vi /etc/group : root:x:0: root,jetbot 으로 수정
+vi /etc/passwd : jetbot의 1000을 0으로 수정은 하지마세요 ( 이 방법을 사용하면 젯봇 터짐, 사용하지 말것 )
 
 1. LSM303DLHC
 http://www.devicemart.co.kr/goods/view?no=1177212
@@ -13,7 +18,7 @@ sudo i2cdetect -y -r 0
 sudo i2cdetect -y -r 1
 
 각도를 주고받을 .msg 파일 생성
-cd && cd Project_ROS_nano/src/project_ros_python/msg && vi get_degree.msg
+cd && cd project_black/src/project_ros_python/msg && vi get_degree.msg
 float32 roll
 float32 pitch
 float32 yaw
@@ -22,8 +27,6 @@ float32 acc_x
 float32 acc_y
 float32 acc_z
 
-
-토픽명 : project_degree
 
 # 참고사항 #
 import board를 하게되면
@@ -92,7 +95,7 @@ i2c = busio.I2C(board.SCL_1, board.SDA_1) 이렇게 사용하면 된다.
 3. roll pitch yaw 계산
 https://gist.github.com/shoebahmedadeel/0d8ca4eaa65664492cf1db2ab3a9e572
 
-cd && cd Project_ROS_nano/src/project_ros_python/src && vi degree_publisher.py
+cd && cd project_black/src/project_ros_python/src && vi lsm_303_dlhc.py
 ///////////////////////////////////////////////////////////////////////////////
 #!/usr/bin/python3
 
@@ -122,7 +125,7 @@ def get_from_raw():
 		yaw = 0.0
 
 		mean_count = 0
-		do_number = 300
+		do_number = 1
 		while ( mean_count < do_number ):
 			mag_x, mag_y, mag_z = mag_sensor.magnetic
 			acc_x, acc_y, acc_z = acc_sensor.acceleration
@@ -131,8 +134,8 @@ def get_from_raw():
 
 			roll = roll + math.atan2(-acc_x, math.sqrt(acc_y*acc_y + acc_z*acc_z))
 			pitch = pitch + math.atan2(acc_y, math.sqrt(acc_x*acc_x + acc_z*acc_z))
-			new_mag_x = mag_x*math.cos(pitch) + mag_y*math.sin(roll)*math.sin(pitch) + mag_z*math.cos(roll)*math.sin(pitch)
-			new_mag_y = mag_y*math.cos(roll) - mag_z*math.sin(roll)
+			#new_mag_x = mag_x*math.cos(pitch) + mag_y*math.sin(roll)*math.sin(pitch) + mag_z*math.cos(roll)*math.sin(pitch)
+			#new_mag_y = mag_y*math.cos(roll) - mag_z*math.sin(roll)
 			yaw = yaw + math.atan2(mag_y, mag_x)
 			mean_count += 1
 
@@ -144,14 +147,14 @@ def get_from_raw():
 		for_pub.pitch = float(pitch)
 		for_pub.yaw = float(yaw)
 
-		for_pub.yaw = float(acc_x)
-		for_pub.yaw = float(acc_y)
-		for_pub.yaw = float(acc_z)
+		for_pub.acc_x = float(acc_x)
+		for_pub.acc_y = float(acc_y)
+		for_pub.acc_z = float(acc_z)
 
-		for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC)) # mean : 0.2sec
 		pub.publish(for_pub)
-		print('yaw : %f' % yaw)
 
+		#for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC)) # mean : 0.2sec
+		#print('yaw : %f' % yaw)
 
 
 if __name__=='__main__':
@@ -165,9 +168,40 @@ if __name__=='__main__':
 
 
 ///////////////////////////////////////////////////////////////////////////////
-권한이 없으면 추가한다.
-vi /etc/group : root:x:0: root,jetbot 으로 수정
-vi /etc/sudoers : jetbot ALL=(ALL:ALL) ALL 으로 수정
-그래도 안되면 최후의 방법으로 vi /etc/passwd : jetbot의 1000을 0으로 수정
+cd && cd project_black/src/project_ros_python/src && sudo chmod +x lsm_303_dlhc.py
 
+cd && cd project_black/src/project_ros_python && vi package.xml
+<build_depend>message_generation</build_depend>
+<exec_depend>message_runtime</exec_depend>
 
+cd && cd project_black/src/project_ros_python && vi CMakeLists.txt
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  tf
+  message_generation
+)
+
+ add_message_files(
+   FILES
+   get_degree.msg
+ )
+
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+ )
+
+catkin_package(
+#  INCLUDE_DIRS include
+  LIBRARIES project_ros_python
+  CATKIN_DEPENDS roscpp rospy std_msgs tf message_runtime
+#  DEPENDS system_lib
+)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+)
+############################################################################################################################

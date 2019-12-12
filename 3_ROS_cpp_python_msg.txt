@@ -1,13 +1,10 @@
 // 1. cpp Publisher의 값을 python Subscriber로 받기 //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+###############################################################################################################################
 
-
-
-// 1.1 cpp에서 기본 메세지로 보냈을때 //
-// 파이썬 subscriber//
+// 1.1 cpp(기본 메세지) + python subscriber //
 // cpp는 <std_msgs::Int32> 로 보냈다. //
-cd && cd ros_test/src/my_python_package/src && vi my_python_msg_subscriber.py
-############################################################
+cd && cd ros_test/src/python_test_package/src && vi py_sub_from_cpp_standard.py
+////////////////////////////////////////////////////////////////////////////////
 #!/usr/bin/env python3
 
 import rospy
@@ -25,17 +22,17 @@ def listener():
 
 if __name__=='__main__':
 	listener()
-############################################################
+////////////////////////////////////////////////////////////////////////////////
 
 
 
-// 1-2. cpp에서 my_msg_setting.msg로 보냈을때 //
-cd && cd ros_test/src/my_python_package/src && vi my_python_msg_subscriber.py
-############################################################
+// 1-2. cpp(my_msg_file_cpp.msg) + python subscriber //
+cd && cd ros_test/src/python_test_package/src && vi py_sub_from_cpp_manual.py
+////////////////////////////////////////////////////////////////////////////////
 #!/usr/bin/env python3
 
 import rospy
-from my_python_package.msg import my_msg_setting
+from python_test_package.msg import my_msg_file_cpp
 
 def callback(data):
 	rospy.loginfo("I heard %d", data.data)
@@ -43,26 +40,26 @@ def callback(data):
 
 def listener():
 	rospy.init_node('my_subscriber_node',anonymous=True)
-	rospy.Subscriber('my_package_msg', my_msg_setting, callback)
+	rospy.Subscriber('my_topic_1', my_msg_file_cpp, callback)
 	rospy.spin()
 
 if __name__=='__main__':
 	listener()
-############################################################
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-cpp의 my_msg_setting.msg 파일을 python의 msg폴더로 복사하고
+////////////////////////////////////////////////////////////////////////////////
+cpp의 my_msg_file.msg 파일을 python의 msg폴더로 복사하고
 python의 CMakeLists.txt를 아래와 같이 수정한다.
-cd && cd ros_test/src/my_python_package && vi CMakeLists.txt
+cd && cd ros_test/src/python_test_package && vi CMakeLists.txt
  add_message_files(
    FILES
-   my_msg_setting_python.msg
-   my_msg_setting.msg
+   my_msg_file_python.msg
+   my_msg_file_cpp.msg
  )
 
 msg파일을 python이 잘 못불러오면 환경변수 추가해준다.
-export PYTHONPATH="${PYTHONPATH}:/home/nvidia/ros_test/src/my_python_packag/msg"
+export PYTHONPATH="${PYTHONPATH}:/home/nvidia/ros_test/src/python_test_package/msg"
 
-
+cd && cd ros_test/src/python_test_package/src && sudo chmod +x py_sub_from_cpp_manual.py
+###############################################################################################################################
 
 
 
@@ -83,40 +80,67 @@ export PYTHONPATH="${PYTHONPATH}:/home/nvidia/ros_test/src/my_python_packag/msg"
 
 
 // 2. python Publisher의 값을 cpp Subscriber로 받기 //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+###############################################################################################################################
 
-
-
-// 2.1 python에서 기본 메세지로 보냈을때 //
+// 2.1 python(기본 메세지) + cpp subscriber //
+////////////////////////////////////////////////////////////////////////////////
+#include "ros/ros.h"
 #include <std_msgs/Float32.h>
-// 헤더를 추가하고
-ros::Subscriber scan_time_sub = n.subscribe("scan_pub_time_for_imu", 1, check_scan_stamp);
-// Subscriber가 호출하는 함수(check_scan_stamp)가 받는 형식을
-void check_scan_stamp(const std_msgs::Float32::ConstPtr& msg)
-// 위와 같이 정의한다.
-double scan_time_check = msg->data;
-// 형식을 맞춰서 데이터를 꺼낸다. 
+void 호출함수(const std_msgs::Float32::ConstPtr& msg)
+{
+	double test = msg->data;
+}
+
+int main
+{
+	ros::Subscriber scan_time_sub = n.subscribe("토픽명", 1, 호출함수);
+	ros::spin();
+}
+////////////////////////////////////////////////////////////////////////////////
 
 
 
-// 2.2 python에서 get_degree.msg로 보냈을때 //
-#include "my_python_package/my_msg_setting_python.h"
-// 헤더를 추가하고
-ros::Subscriber imu_sub = n.subscribe("project_degree", 1, get_degree_from_imu);
-// Subscriber가 호출하는 함수(get_degree_from_imu)가 받는 형식을
-void get_degree_from_imu(const my_python_package::my_msg_setting_python::ConstPtr& msg)
-// 위와 같이 정의한다.
-int a = msg->abcd
-// 형식을 맞춰서 데이터를 꺼낸다.
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-python의 my_msg_setting_python.msg 파일을 cpp의 msg폴더로 복사하고
+// 2.1 python(my_msg_file_python) + cpp subscriber //
+cd ~/ros_test/src/cpp_test_package/src && vi cpp_sub_from_python_manual.cpp
+////////////////////////////////////////////////////////////////////////////////
+#include "ros/ros.h"
+#include "cpp_test_package/my_msg_file_python.h"
+
+void msgCallback(const cpp_test_package::my_msg_file_python::ConstPtr& msg)
+{
+	int test = msg->abcd;
+	std::cout << test << std::endl;
+}
+
+int main(int argc, char **argv) // 노드 메인 함수
+{
+	ros::init(argc, argv, "my_subscriber_node");
+	ros::NodeHandle nh;
+
+	ros::Subscriber imu_sub = nh.subscribe("my_topic_2", 1, msgCallback);
+	ros::spin();
+
+	return 0;
+}
+////////////////////////////////////////////////////////////////////////////////
+python의 my_msg_file_python.msg 파일을 cpp의 msg폴더로 복사하고
 cpp의 CMakeLists.txt를 아래와 같이 수정한다.
-cd && cd ros_test/src/my_python_package && vi CMakeLists.txt
+cd && cd ros_test/src/cpp_test_package && vi CMakeLists.txt
+
  add_message_files(
    FILES
    my_msg_setting_python.msg
-   my_msg_setting.msg
+   my_msg_setting_cpp.msg
  )
+
+add_executable(cpp_sub_from_python_manual src/cpp_sub_from_python_manual.cpp)
+target_link_libraries(cpp_sub_from_python_manual ${catkin_LIBRARIES})
+add_dependencies(cpp_sub_from_python_manual cpp_test_package_generate_messages_cpp)
+
+
+
+###############################################################################################################################
+
 
 
 
