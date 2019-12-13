@@ -101,12 +101,13 @@ from sensor_msgs.msg import Imu
 from project_ros_python.msg import get_degree
 
 import tf
+import tf2_ros
 from tf.transformations import *
 
 MY_PI = 3.14159265358979323846
 
 def callback(data):
-	
+
 	roll = data.roll
 	pitch = data.pitch
 	yaw = data.yaw
@@ -137,23 +138,24 @@ def callback(data):
 	imu_msg.header.frame_id = frame_name
 
 	pub.publish(imu_msg)
-	#print("imu pub success")
+	print("imu pub success")
+
+def callback2(data):
 
 	try:
 		( trans, rot ) = listener.lookupTransform(zero_frame, fixed_frame, rospy.Time(0))
-		# base_footprint location from map
 	except ( tf.LookupException ):
 		print("trans fail")
 	else:
-		( trans, rot ) = listener.lookupTransform(zero_frame, fixed_frame, now)
-		print(trans)
 		odomBroadcaster_imu = TransformBroadcaster()
 		odomBroadcaster_imu.sendTransform(
 						(trans[0], trans[1], trans[2]),
 						(rot[0], rot[1], rot[2], rot[3]),
-						rospy.Time.now(),fixed_frame,zero_frame)
+						rospy.Time.now(), fixed_frame, zero_frame)
+		print(trans)
 		print("trans success")
-		# base_footprint going to map
+
+
 
 if __name__ == "__main__":
 
@@ -165,8 +167,10 @@ if __name__ == "__main__":
 	fixed_frame = rospy.get_param('~fixed_frame', "base_footprint")
 	frame_name = rospy.get_param('~frame_name', "imu")
 
-	rospy.Subscriber('project_degree', get_degree, callback)
+
 	pub = rospy.Publisher('/imu', Imu, queue_size=1)
+	rospy.Subscriber('project_degree', get_degree, callback)
+	rospy.Subscriber('imu', Imu, callback2)
 
 	rospy.spin()
 
