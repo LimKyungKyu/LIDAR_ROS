@@ -1,3 +1,12 @@
+0. 
+주체가 되는 컴퓨터
+export ROS_MASTER_URI=http://192.168.0.25:11311
+export ROS_HOSTNAME=192.168.0.25
+
+원격에서 접속할 컴퓨터
+export ROS_MASTER_URI=http://bit47.iptime.org:10000
+export ROS_HOSTNAME=192.168.0.26
+
 1. carto_mapper mapper.launch 실행
 
 2. 터미널에서 rosservice call /finish_trajectory 0 입력
@@ -5,17 +14,61 @@
 
 3. 터미널에서 rosservice call /write_state /home/nvidia/원하는이름.bag.pbstream
 
-4. cartographer의 x2.lua를 복사하고 아래 내용을 추가한다.
-test.lua
+4. cd && cd project_black/src/x2_cartographer/carto_mapper/config
+x2.lua를 복사하고 test.lua로 이름을 바꿔서 아래 내용을 수정하고 추가한다.
+// 수정 //
+tracking_frame = "base_footprint",
+"base_footprint"를 "imu"로 수정
+TRAJECTORY_BUILDER_2D.use_imu_data = false
+false를 true로 수정
+// 추가 // 
 TRAJECTORY_BUILDER.pure_localization = true
 POSE_GRAPH.optimize_every_n_nodes = 20
  
-5. carto_mapper의 mapper.launch를 복사하고 이름을 바꿔서 아래 내용을 추가한다.
-test_local.launch
--configuration_basename test.lua (lua파일을 4번에서 만든 이름으로 지정한다.)
--load_state_filename $(arg load_state_filename)
+5. cd && cd project_black/src/x2_cartographer/carto_mapper/launch 
+mapper.launch를 복사하고 pure_local.launch로 이름을 바꿔서 아래 내용으로 수정한다.
 
-6. 터미널에서 carto_mapper test_local.launch load_state_filename:=${HOME}/저장된것.bag.pbstream
+<launch>
+
+  <node name="cartographer_node" pkg="cartographer_ros"
+      type="cartographer_node" args="
+          -configuration_directory $(find carto_mapper)/config
+          -configuration_basename x2.lua"
+      output="screen">
+  </node>
+
+  <!-- resolution은 1픽셀이 몇m인지 나타내는 수치이다. 0.05m = 1px  -->
+  <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"
+      type="cartographer_occupancy_grid_node" args="-resolution 0.05"
+      output="screen" />
+
+  <include file="$(find ydlidar)/launch/lidar.launch" />
+
+  <!-- rviz만 끄고싶으면 아래 코드를 삭제한다.
+  <node name="rviz" pkg="rviz" type="rviz" /> -->
+
+  <!-- 노드 추가방법
+  <node name="degree_publisher" pkg="project_ros_python"
+      type="degree_publisher.py" /> -->
+
+  <node name="degree_publisher" pkg="project_ros_python"
+      type="degree_publisher.py" />
+
+  <node name="degree_sub_" pkg="project_ros_python"
+      type="degree_publisher.py" />
+
+</launch>
+
+
+
+6. cd && cd project_black/src/ydlidar_ros/launch
+lidar.launch 를 아래처럼 수정한다.
+  <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser4"
+    args="0.0 0.0 0.0 0.0 0.0  0.0 /base_footprint /laser_frame 40" />
+
+
+
+7. 터미널에서 carto_mapper test_local.launch load_state_filename:=${HOME}/저장된것.bag.pbstream
 
 
 
@@ -147,15 +200,22 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 	cv::Mat color_map;
 	cv::Mat in[] = {wall_padding_mat, wall_padding_mat, wall_padding_mat};
 	merge(in, 3, color_map);
-	cv::circle( color_map, cv::Point(map_origin_x, map_origin_y), 2, cv::Scalar(255,0,0), -1);
+	cv::Mat temp_map = color_map.clone();
 
+	cv::circle( color_map, cv::Point(map_origin_x, map_origin_y), 2, cv::Scalar(255,0,0), -1);
 	cv::flip(color_map, color_map, 0);
+
+
+	
+	cv::flip(temp_map, temp_map, 0);
+	cv::circle( temp_map, cv::Point(map_origin_x, temp_map.rows-map_origin_y), 2, cv::Scalar(0,255,0), -1);
 
 	cv::imshow("meta_data", meta_data);
 	cv::imshow("original", original);
 	cv::imshow("back_ground_white", back_ground_white);
 	cv::imshow("wall_padding_mat", wall_padding_mat);
 	cv::imshow("color_map", color_map);
+	cv::imshow("temp_map", temp_map);
 	cv::waitKey(100);
 
 
