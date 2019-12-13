@@ -141,7 +141,7 @@ def callback(data):
 
 	try:
 		( trans, rot ) = listener.lookupTransform(zero_frame, fixed_frame, rospy.Time(0))
-		# map 으로부터 base_footprint까지 거리
+		# base_footprint location from map
 	except ( tf.LookupException ):
 		print("trans fail")
 	else:
@@ -153,7 +153,7 @@ def callback(data):
 						(rot[0], rot[1], rot[2], rot[3]),
 						rospy.Time.now(),fixed_frame,zero_frame)
 		print("trans success")
-		# base_footprint의 위치를 map의 0,0으로부터 이동시킨다.
+		# base_footprint going to map
 
 if __name__ == "__main__":
 
@@ -167,7 +167,6 @@ if __name__ == "__main__":
 
 	rospy.Subscriber('project_degree', get_degree, callback)
 	pub = rospy.Publisher('/imu', Imu, queue_size=1)
-	rospy.Subscriber('imu', Imu, callback2)
 
 	rospy.spin()
 
