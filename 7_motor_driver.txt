@@ -374,6 +374,10 @@ cd && cd project_black && catkin_make
 
 export PYTHONPATH="${PYTHONPATH}:/home/nvidia/project_black/src/project_ros_python/msg"
 export PYTHONPATH="${PYTHONPATH}:/home/nvidia/project_black/src/project_ros_python/include"
+
+import sys
+sys.path.append("/home/jetbot/project_black/src/project_ros_python/include")
+
 ###############################################################################################################################
 
 
