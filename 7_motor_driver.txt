@@ -460,8 +460,11 @@ cd && cd project_black/src/project_ros_cpp/src && vi rotaion_and_move.cpp
 #include "project_ros_cpp/clean_point.h"
 
 #include <unistd.h>
+#include <fstream>
 #include <iostream>
 #include <chrono>
+
+
 
 
 
@@ -498,7 +501,7 @@ bool shutdown_flag = true;
 // cm 단위 //
 #define grid_interval_cm 4
 // 각도 범위 // 
-#define degree_range 20
+#define degree_range 2
 
 project_ros_cpp::nano_control step_one_order;
 project_ros_cpp::nano_control step_two_order;
@@ -506,11 +509,8 @@ project_ros_cpp::step_one_flag step_one_done_flag;
 
 std_msgs::Int32MultiArray point_data;
 
-std::chrono::system_clock::time_point mean_start;
+std::chrono::system_clock::time_point time_start;
 std::chrono::duration<double> limit_sec;
-
-std::chrono::system_clock::time_point start;
-std::chrono::duration<double> sec;
 
 void find_direction(int point_data_set[][2])
 {
@@ -533,7 +533,6 @@ void find_direction(int point_data_set[][2])
 		{
 
 			///////////////////////////////////////////////////////////////////////////////
-			// 빠르게 움직이기 //
 			tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
 			tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
 			tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
@@ -545,45 +544,6 @@ void find_direction(int point_data_set[][2])
 
 			std::cout << "나노의 현재위치 (i,j) : " << nano_x << ", " << nano_y << std::endl;
 			///////////////////////////////////////////////////////////////////////////////
-
-
-			///////////////////////////////////////////////////////////////////////////////
-			// 흔들림을 보정하기 //
-			/*
-			int mean_count = 0;
-			mean_start = std::chrono::system_clock::now();
-			limit_sec = std::chrono::system_clock::now() - mean_start;
-			while ( limit_sec.count() < 0.2 )
-			{
-				tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
-				tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
-				tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
-
-				nano_x = nano_x + map_origin_x + Coordinate_3D.getX()*100.0/2.0;
-				nano_y = nano_y + map_origin_y - Coordinate_3D.getY()*100.0/2.0;
-				++mean_count;
-
-				limit_sec = std::chrono::system_clock::now() - mean_start;
-			}
-
-			std::cout << "mean_count : " << mean_count << std::endl;
-
-
-			if ( mean_count == 0 )
-			{
-				nano_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
-				nano_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
-				my_test_transform.getBasis().getRPY(roll, pitch, yaw);
-			}
-			else
-			{
-				nano_x = nano_x/mean_count;
-				nano_y = nano_y/mean_count;
-				my_test_transform.getBasis().getRPY(roll, pitch, yaw);
-			}
-			*/
-			///////////////////////////////////////////////////////////////////////////////
-
 
 			///////////////////////////////////////////////////////////////////////////////
 			// 0. 현재위치가 몇 픽셀 떨어져있는지 확인하고 범위내면 다음 찾을 점 세팅//
@@ -709,61 +669,6 @@ void step_one_func(const project_ros_cpp::get_degree::ConstPtr& data)
 
 
 
-
-
-
-
-void step_two_func(const project_ros_cpp::step_one_flag::ConstPtr& data)
-{
-	if ( data->done_flag )
-	{
-		if ( step_two_rotation_flag )
-		{
-			//std::cout << "step two start !!!" << std::endl;
-
-			tf::TransformListener tfl;
-			tf::StampedTransform my_test_transform;
-
-			std::string start = std::string("/map"); 
-			std::string move = std::string("/base_footprint");
-
-			try
-			{
-				tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
-				tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
-				tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
-	
-				double distance = sqrt( pow( (map_origin_x+Coordinate_3D.getX()*100.0/2.0)-(target_x) , 2)+
-							pow( (map_origin_y-Coordinate_3D.getY()*100.0/2.0)-(target_y) , 2) );
-
-				std::cout << "distance : "<< distance << std::endl;
-
-				if ( distance < grid_interval_pixel )
-				{
-					// 목표 범위에 도착한 경우 //
-					std::cout << "직진 정지" << std::endl;
-					step_two_order.move_message = 5;
-					step_two_rotation_flag= false;
-				}
-				else if ( distance > grid_interval_pixel )
-				{
-					std::cout << "직진" << std::endl;
-					step_two_order.move_message = 1;
-				}
-			}
-			catch(tf2::LookupException& e)
-			{
-				printf("can't find location\n");
-				step_two_rotation_flag= false;
-				xy_count = xy_count - 1;
-				return;
-			}
-			
-		}
-	}
-}
-
-
 void get_grid_point(const std_msgs::Int32MultiArray::ConstPtr& msg)
 {
 
@@ -790,12 +695,20 @@ int main(int argc, char **argv)
 	ros::NodeHandle nh;
 
 	ros::Subscriber step_one = nh.subscribe("mpu_6050_degree", 1, step_one_func);
-	ros::Subscriber step_two = nh.subscribe("step_one_topic", 1, step_two_func);
 
 	ros::Publisher move_ready = nh.advertise<std_msgs::Int32>("move_ready_topic", 1);
 	ros::Publisher move_pub_one = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
 	ros::Publisher move_pub_two = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
 	ros::Publisher step_one_done = nh.advertise<project_ros_cpp::step_one_flag>("step_one_topic", 1);
+
+	tf::TransformListener tfl;
+	tf::StampedTransform my_test_transform;
+
+	std::string start = std::string("/map"); 
+	std::string move = std::string("/base_footprint");
+
+	double distance = 0.0;
+	int mode_value = 0;
 
 
 	while ( ros::ok() )
@@ -806,7 +719,7 @@ int main(int argc, char **argv)
 		std_msgs::Int32::ConstPtr control_mode = ros::topic::waitForMessage<std_msgs::Int32>("control_tower_topic",nh,ros::Duration(1.0));
 		if (control_mode)
 		{
-			int mode_value = control_mode->data;
+			mode_value = control_mode->data;
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -884,63 +797,66 @@ int main(int argc, char **argv)
 							// 1. 목표 지점 향하게 만들기 //
 							ros::spinOnce();
 							move_pub_one.publish(step_one_order);
+
+			    				time_start = std::chrono::system_clock::now();
+							limit_sec = std::chrono::system_clock::now() - time_start;
+							while ( limit_sec.count() < 0.1 )
+							{
+								limit_sec = std::chrono::system_clock::now() - time_start;
+							}
 						}
 						else
 						{
-							// 회전 후 카토그래퍼 안정화를 위해 쉬는 시간 //
-							////////////////////////////////////////////////////////
-							/*
-			    				start = std::chrono::system_clock::now();
-							sec = std::chrono::system_clock::now() - start;
-							while ( sec.count() < 0.2 )
-							{
-								sec = std::chrono::system_clock::now() - start;
-							}
-							*/
-							////////////////////////////////////////////////////////
-
-
-							// 2. 목표 지점으로 직진하고 도착하면 멈추기 //
+							// 2. 목표 지점으로 직진하기 //
 							std::cout <<"target point : "<< target_x <<", " << target_y <<std::endl;
-
-							step_one_done_flag.done_flag = 1;
-							step_one_done.publish(step_one_done_flag);
-
-							ros::spinOnce();
-							move_pub_two.publish(step_two_order);
-							if ( step_two_rotation_flag )
+							int step_count = 0;
+							while ( step_count < 5)
 							{
-								///////////////////////////////////
-								/*
-				    				start = std::chrono::system_clock::now();
-								sec = std::chrono::system_clock::now() - start;
-
-								while ( sec.count() < 0.3 )
+								for (int i=0; i<10; i++)
 								{
-									sec = std::chrono::system_clock::now() - start;
+									step_two_order.move_message = 1;
+									move_pub_two.publish(step_two_order);
 								}
-								step_two_order.move_message = 5;
-								move_pub_two.publish(step_two_order);	
-								*/
-								///////////////////////////////////
 
-								///////////////////////////////////
-								xy_count = xy_count - 1;
-								find_direction(point_data_set);
-								step_one_rotation_flag = true;
-								make_target_yaw_flag = true;
-								step_one_done_flag.done_flag = 0;
-								step_one_done.publish(step_one_done_flag);
-								///////////////////////////////////		
+				    				time_start = std::chrono::system_clock::now();
+								limit_sec = std::chrono::system_clock::now() - time_start;
+								while ( limit_sec.count() < 0.05 )
+								{
+									limit_sec = std::chrono::system_clock::now() - time_start;
+								}
+
+								for (int i=0; i<10; i++)
+								{
+									step_two_order.move_message = 5;
+									move_pub_two.publish(step_two_order);
+								}
+								++step_count;
 							}
+
+							for (int i=0; i<10; i++)
+							{
+								step_two_order.move_message = 5;
+								move_pub_two.publish(step_two_order);
+							}
+
+							///////////////////////////////////
+							xy_count = xy_count - 1;
+
+							step_one_rotation_flag = true;
+							make_target_yaw_flag = true;
+
+							step_two_rotation_flag = true;
+							range_flag = true;
+							range_out_flag = true;
+
+							find_direction(point_data_set);
+							///////////////////////////////////	
 						
 						}
 					}
 					else
 					{
-						// 어떤경우든 들어오면 일단 정지 //
-						step_two_order.move_message = 5;
-						move_pub_two.publish(step_two_order);
+
 
 						///////////////////////////////////
 						step_one_rotation_flag = true;
@@ -956,14 +872,23 @@ int main(int argc, char **argv)
 
 						/////////////////////////////////////////////////////////////////////////////////////////////////////////
 						// 포인트 이동 후 모드가 바뀐지 확인 //
-						control_mode = ros::topic::waitForMessage<std_msgs::Int32>("control_tower_topic",nh,ros::Duration(1.0));
-						if (control_mode)
+						// std::ifstream open_file("/home/jetbot/web/mode.txt");
+						std::ifstream open_file("/home/nvidia/mode.txt");
+						std::string mode_data;
+						if( open_file.is_open() )
 						{
-							mode_value = control_mode->data;
+							open_file >> mode_data;
+							mode_value = atoi(mode_data.c_str());
+							open_file.close();
+
 							if ( mode_value == 200 || mode_value == 300 )
 							{
 								break;
 							}
+						}
+						else
+						{
+							std::cout << "open fail" << std::endl;
 						}
 						/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
