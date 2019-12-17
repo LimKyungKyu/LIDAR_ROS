@@ -397,454 +397,108 @@ sys.path.append("/home/jetbot/project_black/src/project_ros_python/include")
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // 4. IMU, Google cartograhper TF를 활용하여 목표 지점 보게 만들고 직진 //
 ############################################################################################################################
-
 cd && cd project_black/src/project_ros_cpp/src && vi rotaion_and_move.cpp
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #include <ros/ros.h>
-#include <iostream>
+
+#include "std_msgs/Int32.h"
+
 #include "tf/transform_listener.h"
-#include "project_ros_cpp/nano_control.h"
-#include "project_ros_cpp/get_degree.h"
-#include "project_ros_cpp/step_one_flag.h"
-#include <unistd.h>
-#include <chrono>
-
-#define dot_point 4
-double target_xy[dot_point][2]; // 목표위치 x,y
-int xy_count = 0;
-
-double target_x = 0.0;
-double target_y = 0.0;
-
-bool step_one_rotation_flag = true;
-bool make_target_yaw_flag = true;
-double destination_yaw = 0.0;
-double get_mpu_yaw = 0.0;
-double target_yaw = 0.0;
-int check_angle_count = 0;
-
-bool step_two_rotation_flag = true;
-bool range_flag = true;
-bool range_out_flag = true;
-double range_out_check = 0.0;
-double find_center_yaw =0.0;
-
-bool shutdown_flag = true;
-
-project_ros_cpp::nano_control step_one_order;
-project_ros_cpp::nano_control step_two_order;
-project_ros_cpp::step_one_flag step_one_done_flag;
-
-std::chrono::system_clock::time_point mean_start;
-std::chrono::duration<double> limit_sec;
-
-std::chrono::system_clock::time_point start;
-std::chrono::duration<double> sec;
-
-void find_direction()
-{	
-	double mean_x = 0.0;
-	double mean_y = 0.0;
-	int mean_count = 0;
-
-	if (xy_count < (sizeof(target_xy)/sizeof(target_xy[0])) )
-	{
-		target_x = target_xy[xy_count][0];
-		target_y = target_xy[xy_count][1];
-		++xy_count;
-		////////////////////////////////////////////////////////////////////////
-		tf::TransformListener tfl;
-		tf::StampedTransform my_test_transform;
-
-		std::string start = std::string("/map"); 
-		std::string move = std::string("/base_footprint");
-		
-		tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
-		tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
-
-		double yaw, pitch, roll;
-		my_test_transform.getBasis().getRPY(roll, pitch, yaw);
-		tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
-		////////////////////////////////////////////////////////////////////////
-
-
-		////////////////////////////////////////////////////////////////////////
-		mean_start = std::chrono::system_clock::now();
-		limit_sec = std::chrono::system_clock::now() - mean_start;
-
-		while ( limit_sec.count() < 0.3 )
-		{
-			limit_sec = std::chrono::system_clock::now() - mean_start;
-			mean_x = mean_x + Coordinate_3D.getX();
-			mean_y = mean_y + Coordinate_3D.getY();
-			++mean_count;
-		}
-
-		mean_x = mean_x/mean_count;
-		mean_y = mean_y/mean_count;
-
-		if ( mean_count == 0 )
-		{
-			mean_x = Coordinate_3D.getX();
-			mean_y = Coordinate_3D.getY();
-		}
-		////////////////////////////////////////////////////////////////////////
-
-		////////////////////////////////////////////////////////////////////////
-		/*
-		mean_x = Coordinate_3D.getX();
-		mean_y = Coordinate_3D.getY();
-		*/
-		////////////////////////////////////////////////////////////////////////
-
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// 0. 이미 목표지점인지 확인한다. //
-		double distance = sqrt(pow(mean_x*100-target_x,2)+pow(mean_y*100-target_y,2));
-		if ( distance < 10.0 )
-		{
-			step_two_rotation_flag= false;
-			std::cout << "reached !!! : " << std::endl;
-		}
-
-		// 1. nano의 yaw를 0으로 만들 yaw값을 구한다.
-			// nano좌표의 Y가 0보다 작은경우 yaw는 반드시 0 ~ -180 사이의 값을 반환한다.
-			// nano좌표의 Y가 0보다 큰경우 yaw는 반드시 0 ~ +180 사이의 값을 반환한다.
-		double nano_zero_yaw = -yaw*180.0/M_PI;
-		//std::cout << "nano_zero_yaw : " << nano_zero_yaw << std::endl;
-
-		// 2. nano의 yaw가 0일때, 목표지점까지의 yaw를 구한다.
-		double zero_to_target = (atan2((target_y-mean_y*100.0), (target_x-mean_x*100.0))*180.0/M_PI);
-		//std::cout << "zero_to_target : " << zero_to_target << std::endl;
-
-		// 3. 현재 yaw에서 회전할 yaw를 구한다.
-			// 180도 이상의 회전을 방지하기 위해 아래와 같이 정의한다.
-		destination_yaw = nano_zero_yaw + zero_to_target;
-		if ( destination_yaw < -180.0 )
-		{
-			destination_yaw = destination_yaw + 360.0;
-		}
-		else if ( destination_yaw > 180.0 )
-		{
-			destination_yaw = destination_yaw - 360.0;
-		}
-		//std::cout << "destination_yaw : " << destination_yaw << std::endl;
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	}
-	else
-	{
-		shutdown_flag = false;
-	}
-
-}
-
-void do_rotation(const project_ros_cpp::get_degree::ConstPtr& data)
-{
-	get_mpu_yaw = data->yaw;
-	//std::cout << "do_rotation start" << std::endl;
-
-	if ( step_one_rotation_flag )
-	{
-		if ( make_target_yaw_flag )
-		{
-			if ( get_mpu_yaw > 180.0 )
-			{
-				get_mpu_yaw = get_mpu_yaw - 360.0;
-			}
-			else if ( get_mpu_yaw < -180.0 )
-			{
-				get_mpu_yaw = get_mpu_yaw + 360.0;
-			}
-			
-			target_yaw = destination_yaw + get_mpu_yaw;
-
-			if ( target_yaw > 180.0 )
-			{
-				target_yaw = target_yaw - 360.0;
-			}
-			else if ( target_yaw < -180.0 )
-			{
-				target_yaw = target_yaw + 360.0;
-			}
-			
-			make_target_yaw_flag = false;
-		}
-
-		double gap = target_yaw - get_mpu_yaw;
-
-		if ( gap < -180.0 )
-		{
-			gap = gap + 360.0;
-		}
-		else if ( gap > 180.0 )	
-		{
-			gap = gap - 360.0;
-		}
-
-		if ( (gap<10.0) && (gap>-10.0) )
-		{
-			std::cout << "gap : " << gap << " 회전 정지" <<std::endl;
-			step_one_order.move_message = 5;
-			step_one_rotation_flag = false;		
-		}
-		else if ( gap>10.0 )
-		{
-			std::cout << "gap : " << gap << " 제자리 좌회전" <<std::endl;
-			step_one_order.move_message = 7;
-		}
-		else if ( gap<-10.0 )
-		{
-			std::cout << "gap : " << gap << " 제자리 우회전" <<std::endl;
-			step_one_order.move_message = 6;
-		}
-	}
-}
-
-
-
-
-
-
-
-void move_nano(const project_ros_cpp::step_one_flag::ConstPtr& data)
-{
-	if ( data->done_flag )
-	{
-		if ( step_two_rotation_flag )
-		{
-			//std::cout << "move_nano start" << std::endl;
-
-			tf::TransformListener tfl;
-			tf::StampedTransform my_test_transform;
-
-			std::string start = std::string("/map"); 
-			std::string move = std::string("/base_footprint");
-
-			tfl.waitForTransform(start, move, ros::Time(), ros::Duration(10.0));
-			tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
-			tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
-
-			// 현재 위치와 이전 위치의 차이를 계산한다. 이전 위치보다 현재 위치가 더 멀면 음수가 된다. = 목표를 향하는것이 아니다. //
-			double distance = sqrt(pow(Coordinate_3D.getX()*100-target_x,2)+pow(Coordinate_3D.getY()*100-target_y,2));
-
-			std::cout << "distance : "<< distance << std::endl;
-
-			if ( distance < 10.0 )
-			{
-				// 목표 범위에 도착한 경우 //
-				std::cout << "직진 정지" << std::endl;
-				step_two_order.move_message = 5;
-				step_two_rotation_flag= false;
-			}
-			else if ( distance > 10.0 )
-			{
-				std::cout << "직진" << std::endl;
-				step_two_order.move_message = 1;
-			}
-			
-		}
-	}
-}
-
-
-
-
-
-
-int main(int argc, char **argv)
-{
-	ros::init(argc, argv, "find_yaw");
-	ros::NodeHandle nh;
-	ros::Subscriber step_one = nh.subscribe("mpu_6050_degree", 1, do_rotation);
-	ros::Subscriber step_two = nh.subscribe("step_one_topic", 1, move_nano);
-	ros::Publisher move_pub_one = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
-	ros::Publisher move_pub_two = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
-	ros::Publisher step_one_done = nh.advertise<project_ros_cpp::step_one_flag>("step_one_topic", 1);
-
-	for ( int i=0; i<dot_point; i++)
-	{
-		target_xy[i][0] = 0.0 + 10.0*i;
-		target_xy[i][1] = 0.0;
-	}
-
-	////////////////////////////////////////////////////////////////////////////////////////
-
-	///////////////////////////////////
-	step_one_rotation_flag = true;
-	make_target_yaw_flag = true;
-
-	step_two_rotation_flag = true;
-	range_flag = true;
-	range_out_flag = true;
-
-	find_direction();
-	///////////////////////////////////
-
-	while ( ros::ok() )
-	{
-		if ( step_two_rotation_flag )
-		{
-			if ( step_one_rotation_flag )
-			{
-				// 1 목표 지점 향하게 만들기 //
-				ros::spinOnce();
-				move_pub_one.publish(step_one_order);
-			}
-			else
-			{
-				// 2 목표 지점으로 직진하거나 멈추기 //
-				std::cout <<"target point : "<< target_x <<", " << target_y <<std::endl;
-				step_one_done_flag.done_flag = 1;
-				step_one_done.publish(step_one_done_flag);
-				ros::spinOnce();
-				move_pub_two.publish(step_two_order);
-				
-    				start = std::chrono::system_clock::now();
-				sec = std::chrono::system_clock::now() - start;
-				while ( sec.count() < 0.3 )
-				{
-					sec = std::chrono::system_clock::now() - start;
-				}
-				step_two_order.move_message = 5;
-				move_pub_two.publish(step_two_order);
-
-				///////////////////////////////////
-				xy_count = xy_count - 1;
-				find_direction();
-				step_one_rotation_flag = true;
-				make_target_yaw_flag = true;
-				step_one_done_flag.done_flag = 0;
-				step_one_done.publish(step_one_done_flag);
-				///////////////////////////////////
-			}
-		}
-		else
-		{
-			///////////////////////////////////
-			step_one_rotation_flag = true;
-			make_target_yaw_flag = true;
-
-			step_two_rotation_flag = true;
-			range_flag = true;
-			range_out_flag = true;
-
-			find_direction();
-			///////////////////////////////////
-
-			if ( !shutdown_flag )
-			{
-				for ( int i=0; i<5; i++)
-				{
-					step_two_order.move_message = 5;
-					move_pub_two.publish(step_two_order);
-				}
-				ros::shutdown();
-			}
-		}
-
-	}
-	////////////////////////////////////////////////////////////////////////////////////////
-
-	return 0;
-}
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-nano_move.py : (직진 0.2, 회전 0.15)
-
-cd && cd project_black/src/project_ros_cpp && mkdir msg && cd msg && vi step_one_flag.msg
-int32 done_flag
-
-cd && cd project_black/src/project_ros_python/msg 에서
-get_degree.msg, nano_control.msg 파일 복사해서 cpp의 msg폴더에 붙여넣기
-
-cd && cd project_black/src/project_ros_cpp && vi package.xml
-<build_depend>message_generation</build_depend>
-<exec_depend>message_runtime</exec_depend>
-
-cd && cd project_black/src/project_ros_cpp && vi CMakeLists.txt
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  rospy
-  std_msgs
-  tf
-  message_generation
-)
-
- add_message_files(
-   FILES
-   get_degree.msg
-   nano_control.msg
-   step_one_flag.msg
- )
-
- generate_messages(
-   DEPENDENCIES
-   std_msgs
- )
-
-add_executable(rotaion_and_move src/rotaion_and_move.cpp)
-target_link_libraries(rotaion_and_move ${catkin_LIBRARIES})
-add_dependencies(rotaion_and_move project_ros_cpp_generate_messages_cpp)
-
-catkin_package(
-#  INCLUDE_DIRS include
-  LIBRARIES project_ros_cpp
-  CATKIN_DEPENDS roscpp rospy std_msgs tf message_runtime
-#  DEPENDS system_lib
-)
-
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-)
-############################################################################################################################
-
-
-
-
-
-
-// 5. 최적화 //
-#include <ros/ros.h>
-#include <iostream>
-#include "tf/transform_listener.h"
-#include "project_ros_cpp/nano_control.h"
-#include "project_ros_cpp/get_degree.h"
-#include "project_ros_cpp/step_one_flag.h"
-#include "project_ros_cpp/clean_point.h"
-#include <unistd.h>
-#include <chrono>
 
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/MultiArrayDimension.h"
 #include "std_msgs/Int32MultiArray.h"
 
+#include "project_ros_cpp/nano_control.h"
+#include "project_ros_cpp/get_degree.h"
+#include "project_ros_cpp/step_one_flag.h"
+#include "project_ros_cpp/clean_point.h"
 
+#include <unistd.h>
+#include <iostream>
+#include <chrono>
+
+
+
+// mode flag //
+bool other_mode_flag = true;
+
+// move ready //
+std_msgs::Int32 move_ready_flag;
+
+// find_direction //
+double target_x = 0.0, target_y = 0.0;
 int xy_count = 0;
-
 int map_origin_x = 0, map_origin_y = 0;
 
-double target_x = 0.0;
-double target_y = 0.0;
-
+// step_one_func //
 bool step_one_rotation_flag = true;
 bool make_target_yaw_flag = true;
-double destination_yaw = 0.0;
 double get_mpu_yaw = 0.0;
+double destination_yaw = 0.0;
 double target_yaw = 0.0;
 int check_angle_count = 0;
 
+// step_two_func //
 bool step_two_rotation_flag = true;
 bool range_flag = true;
 bool range_out_flag = true;
 double range_out_check = 0.0;
 double find_center_yaw =0.0;
-
 bool shutdown_flag = true;
 
-#define point_interval 4
+
+// 픽셀 단위 //
+#define grid_interval_pixel 4
+// cm 단위 //
+#define grid_interval_cm 4
+// 각도 범위 // 
+#define degree_range 20
 
 project_ros_cpp::nano_control step_one_order;
 project_ros_cpp::nano_control step_two_order;
@@ -858,100 +512,108 @@ std::chrono::duration<double> limit_sec;
 std::chrono::system_clock::time_point start;
 std::chrono::duration<double> sec;
 
-void find_direction(int point_data_set[][2] )
-{	
-	double mean_x = 0.0;
-	double mean_y = 0.0;
-	int mean_count = 0;
+void find_direction(int point_data_set[][2])
+{
+	double yaw=0.0, pitch=0.0, roll=0.0;
+	double nano_x=0.0, nano_y=0.0;
 
 	if (xy_count < (point_data.data.size()/2) )
 	{
-
 		target_x = point_data_set[xy_count][0];
 		target_y = point_data_set[xy_count][1];
 		++xy_count;
 
-		////////////////////////////////////////////////////////////////////////
 		tf::TransformListener tfl;
 		tf::StampedTransform my_test_transform;
 
 		std::string start = std::string("/map"); 
 		std::string move = std::string("/base_footprint");
 		
-		mean_start = std::chrono::system_clock::now();
-		limit_sec = std::chrono::system_clock::now() - mean_start;
-
 		try
 		{
+
+			///////////////////////////////////////////////////////////////////////////////
+			// 빠르게 움직이기 //
 			tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
 			tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
 			tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
 
-			mean_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
-			mean_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
-
-			std::cout << "현재위치 (i,j) : " << mean_x << ", " << mean_y << std::endl;
-
-			double yaw, pitch, roll;
+			// Map의(0,0)에 해당하는 Mat의(i,j)는 (map_origin_x, map_origin_y)이다. //
+			nano_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
+			nano_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
 			my_test_transform.getBasis().getRPY(roll, pitch, yaw);
 
+			std::cout << "나노의 현재위치 (i,j) : " << nano_x << ", " << nano_y << std::endl;
 			///////////////////////////////////////////////////////////////////////////////
-			// 흔들릴 경우 대비 //
+
+
+			///////////////////////////////////////////////////////////////////////////////
+			// 흔들림을 보정하기 //
 			/*
+			int mean_count = 0;
+			mean_start = std::chrono::system_clock::now();
+			limit_sec = std::chrono::system_clock::now() - mean_start;
 			while ( limit_sec.count() < 0.2 )
 			{
-				limit_sec = std::chrono::system_clock::now() - mean_start;
-
 				tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
 				tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
 				tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
 
-				mean_x = mean_x + Coordinate_3D.getX();
-				mean_y = mean_y + Coordinate_3D.getY();
+				nano_x = nano_x + map_origin_x + Coordinate_3D.getX()*100.0/2.0;
+				nano_y = nano_y + map_origin_y - Coordinate_3D.getY()*100.0/2.0;
 				++mean_count;
+
+				limit_sec = std::chrono::system_clock::now() - mean_start;
 			}
 
-			std::cout << "mean_count !!! : " << mean_count << std::endl;
+			std::cout << "mean_count : " << mean_count << std::endl;
 
 
 			if ( mean_count == 0 )
 			{
-				mean_x = Coordinate_3D.getX();
-				mean_y = Coordinate_3D.getY();
-				double yaw, pitch, roll;
+				nano_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
+				nano_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
 				my_test_transform.getBasis().getRPY(roll, pitch, yaw);
 			}
 			else
 			{
-				mean_x = mean_x/mean_count;
-				mean_y = mean_y/mean_count;
-				double yaw, pitch, roll;
+				nano_x = nano_x/mean_count;
+				nano_y = nano_y/mean_count;
 				my_test_transform.getBasis().getRPY(roll, pitch, yaw);
 			}
 			*/
 			///////////////////////////////////////////////////////////////////////////////
 
 
-			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-			// 0. 현재 상태가 목표지점인지 확인한다. //
-			double distance = sqrt(pow(mean_x-target_x,2)+pow(mean_y-target_y,2));
-			if ( distance < point_interval )
+			///////////////////////////////////////////////////////////////////////////////
+			// 0. 현재위치가 몇 픽셀 떨어져있는지 확인하고 범위내면 다음 찾을 점 세팅//
+			double distance = sqrt(pow(nano_x-target_x,2)+pow(nano_y-target_y,2));
+			if ( distance < grid_interval_pixel )
 			{
-				step_two_rotation_flag= false;
 				std::cout << "reached !!! : " << std::endl;
+				step_two_rotation_flag= false;
 				return;
 			}
+			///////////////////////////////////////////////////////////////////////////////
 
-			// 1. nano의 yaw를 0으로 만들 yaw값을 구한다.
-				// nano좌표의 Y가 0보다 작은경우 yaw는 반드시 0 ~ -180 사이의 값을 반환한다.
-				// nano좌표의 Y가 0보다 큰경우 yaw는 반드시 0 ~ +180 사이의 값을 반환한다.
+	
+			///////////////////////////////////////////////////////////////////////////////
+			// 1. nano의 yaw를 0으로 만들 yaw값을 구한다. //
+			// nano좌표의 Y가 0보다 작은경우 yaw는 반드시 0 ~ -180 사이의 값을 반환한다.
+			// nano좌표의 Y가 0보다 큰경우 yaw는 반드시 0 ~ +180 사이의 값을 반환한다.
 			double nano_zero_yaw = -yaw*180.0/M_PI;
 			//std::cout << "nano_zero_yaw : " << nano_zero_yaw << std::endl;
+			///////////////////////////////////////////////////////////////////////////////
 
+
+			///////////////////////////////////////////////////////////////////////////////	
 			// 2. nano의 yaw가 0일때, 목표지점까지의 yaw를 구한다.
-			double zero_to_target = (atan2( -(target_y-mean_y), (target_x-mean_x))*180.0/M_PI);
+			double zero_to_target = (atan2(-(target_y-nano_y), (target_x-nano_x))*180.0/M_PI);
 			//std::cout << "zero_to_target : " << zero_to_target << std::endl;
+			///////////////////////////////////////////////////////////////////////////////	
 
+
+			///////////////////////////////////////////////////////////////////////////////
 			// 3. 현재 yaw에서 회전할 yaw를 구한다.
 				// 180도 이상의 회전을 방지하기 위해 아래와 같이 정의한다.
 			destination_yaw = nano_zero_yaw + zero_to_target;
@@ -964,7 +626,7 @@ void find_direction(int point_data_set[][2] )
 				destination_yaw = destination_yaw - 360.0;
 			}
 			//std::cout << "destination_yaw : " << destination_yaw << std::endl;
-			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			///////////////////////////////////////////////////////////////////////////////
 		}
 		catch(tf2::LookupException& e)
 		{
@@ -983,10 +645,10 @@ void find_direction(int point_data_set[][2] )
 
 }
 
-void do_rotation(const project_ros_cpp::get_degree::ConstPtr& data)
+void step_one_func(const project_ros_cpp::get_degree::ConstPtr& data)
 {
 	get_mpu_yaw = data->yaw;
-	//std::cout << "do_rotation start" << std::endl;
+	//std::cout << "step one start !!!" << std::endl;
 
 	if ( step_one_rotation_flag )
 	{
@@ -1026,18 +688,18 @@ void do_rotation(const project_ros_cpp::get_degree::ConstPtr& data)
 			gap = gap - 360.0;
 		}
 
-		if ( (gap<5.0) && (gap>-5.0) )
+		if ( (gap<degree_range) && (gap>-degree_range) )
 		{
 			std::cout << "gap : " << gap << " 회전 정지" <<std::endl;
 			step_one_order.move_message = 5;
 			step_one_rotation_flag = false;		
 		}
-		else if ( gap>5.0 )
+		else if ( gap>degree_range )
 		{
 			std::cout << "gap : " << gap << " 제자리 좌회전" <<std::endl;
 			step_one_order.move_message = 7;
 		}
-		else if ( gap<-5.0 )
+		else if ( gap<-degree_range )
 		{
 			std::cout << "gap : " << gap << " 제자리 우회전" <<std::endl;
 			step_one_order.move_message = 6;
@@ -1051,13 +713,13 @@ void do_rotation(const project_ros_cpp::get_degree::ConstPtr& data)
 
 
 
-void move_nano(const project_ros_cpp::step_one_flag::ConstPtr& data)
+void step_two_func(const project_ros_cpp::step_one_flag::ConstPtr& data)
 {
 	if ( data->done_flag )
 	{
 		if ( step_two_rotation_flag )
 		{
-			//std::cout << "move_nano start" << std::endl;
+			//std::cout << "step two start !!!" << std::endl;
 
 			tf::TransformListener tfl;
 			tf::StampedTransform my_test_transform;
@@ -1071,19 +733,19 @@ void move_nano(const project_ros_cpp::step_one_flag::ConstPtr& data)
 				tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
 				tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
 	
-				// 현재 위치와 이전 위치의 차이를 계산한다. 이전 위치보다 현재 위치가 더 멀면 음수가 된다. = 목표를 향하는것이 아니다. //
-				double distance = sqrt(pow(Coordinate_3D.getX()*100-target_x,2)+pow(Coordinate_3D.getY()*100-target_y,2));
+				double distance = sqrt( pow( (map_origin_x+Coordinate_3D.getX()*100.0/2.0)-(target_x) , 2)+
+							pow( (map_origin_y-Coordinate_3D.getY()*100.0/2.0)-(target_y) , 2) );
 
 				std::cout << "distance : "<< distance << std::endl;
 
-				if ( distance < point_interval )
+				if ( distance < grid_interval_pixel )
 				{
 					// 목표 범위에 도착한 경우 //
 					std::cout << "직진 정지" << std::endl;
 					step_two_order.move_message = 5;
 					step_two_rotation_flag= false;
 				}
-				else if ( distance > point_interval )
+				else if ( distance > grid_interval_pixel )
 				{
 					std::cout << "직진" << std::endl;
 					step_two_order.move_message = 1;
@@ -1102,7 +764,7 @@ void move_nano(const project_ros_cpp::step_one_flag::ConstPtr& data)
 }
 
 
-void get_mat_check(const std_msgs::Int32MultiArray::ConstPtr& msg)
+void get_grid_point(const std_msgs::Int32MultiArray::ConstPtr& msg)
 {
 
 	std::cout << "here 3" << std::endl; 
@@ -1115,185 +777,220 @@ void get_mat_check(const std_msgs::Int32MultiArray::ConstPtr& msg)
 	std::cout << "here 5" << std::endl; 
 }
 
+
+
+
+
+
+
+
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "find_yaw");
 	ros::NodeHandle nh;
 
-	ros::Subscriber step_one = nh.subscribe("mpu_6050_degree", 1, do_rotation);
-	ros::Subscriber step_two = nh.subscribe("step_one_topic", 1, move_nano);
+	ros::Subscriber step_one = nh.subscribe("mpu_6050_degree", 1, step_one_func);
+	ros::Subscriber step_two = nh.subscribe("step_one_topic", 1, step_two_func);
 
+	ros::Publisher move_ready = nh.advertise<std_msgs::Int32>("move_ready_topic", 1);
 	ros::Publisher move_pub_one = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
 	ros::Publisher move_pub_two = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
 	ros::Publisher step_one_done = nh.advertise<project_ros_cpp::step_one_flag>("step_one_topic", 1);
 
-	while ( ros::ok() )
-	{
-		std::cout << "here 1" << std::endl;
-
-		std_msgs::Int32MultiArray::ConstPtr msg = ros::topic::waitForMessage<std_msgs::Int32MultiArray>("clean_point_topic",nh,ros::Duration(1.0));
-		if (msg)
-		{
-			std::cout << "here 2" << std::endl;
-			get_mat_check(msg);
-			std::cout << "here 6" << std::endl;
-			break; 
-		}
-
-	}
-	
-
-	map_origin_y = point_data.data.back();
-	point_data.data.pop_back();
-	map_origin_x = point_data.data.back();
-	point_data.data.pop_back();
-
-	std::cout << "map : " << map_origin_x << ", " << map_origin_y << std::endl;
-
-
-	int point_data_set[point_data.data.size()/2][2];
-
-	int j = 0;
-	for ( int i=0; i<(point_data.data.size()/2) ; i++ )
-	{
-		point_data_set[i][0] = point_data.data[j];
-		point_data_set[i][1] = point_data.data[j+1];
-		j+=2;
-	}
-
-	for ( int i=0; i<(point_data.data.size()/2) ; i++ )
-	{
-		std::cout << point_data_set[i][0] << ", " << point_data_set[i][1] << std::endl;
-	}
-
-	// test1 //
-	/*
-	target_xy[0][0] = 50.0;
-	target_xy[0][1] = 0.0;
-
-	target_xy[1][0] = 50.0;
-	target_xy[1][1] = -50.0;
-
-	target_xy[2][0] = 65.0;
-	target_xy[2][1] = -100.0;
-
-	target_xy[3][0] = 65.0;
-	target_xy[3][1] = -130.0;
-
-	target_xy[4][0] = 100.0;
-	target_xy[4][1] = -130.0;
-
-	target_xy[5][0] = 65.0;
-	target_xy[5][1] = -130.0;
-
-	target_xy[6][0] = 65.0;
-	target_xy[6][1] = -100.0;
-
-	target_xy[7][0] = 50.0;
-	target_xy[7][1] = -50.0;
-
-	target_xy[8][0] = 50.0;
-	target_xy[8][1] = 0.0;
-	*/
-
-	
-
-	///////////////////////////////////
-	step_one_rotation_flag = true;
-	make_target_yaw_flag = true;
-
-	step_two_rotation_flag = true;
-	range_flag = true;
-	range_out_flag = true;
-
-	find_direction(point_data_set);
-	///////////////////////////////////
 
 	while ( ros::ok() )
 	{
-		if ( step_two_rotation_flag )
+		std::cout << "mode check" << std::endl;
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		std_msgs::Int32::ConstPtr control_mode = ros::topic::waitForMessage<std_msgs::Int32>("control_tower_topic",nh,ros::Duration(1.0));
+		if (control_mode)
 		{
-			if ( step_one_rotation_flag )
+			int mode_value = control_mode->data;
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			if ( mode_value == 100)
 			{
-				// 1. 목표 지점 향하게 만들기 //
-				ros::spinOnce();
-				move_pub_one.publish(step_one_order);
+				std::cout << "mode is : " << mode_value << std::endl;
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				// grid 포인트를 받을때까지 move_ready_topic을 발송한다. //
+				while ( ros::ok() )
+				{
+					move_ready_flag.data = 100;
+					move_ready.publish(move_ready_flag);
+					std_msgs::Int32MultiArray::ConstPtr msg = ros::topic::waitForMessage<std_msgs::Int32MultiArray>("clean_point_topic",nh,ros::Duration(1.0));
+					if (msg)
+					{
+						get_grid_point(msg);
+						break; 
+					}
+				}
+				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				
+
+
+				///////////////////////////////////////////////////////////////////////////////////
+				// Map의(0,0)에 해당하는 Mat의(i,j)는 (map_origin_x, map_origin_y)이다. //
+				map_origin_y = point_data.data.back();
+				point_data.data.pop_back();
+				map_origin_x = point_data.data.back();
+				point_data.data.pop_back();
+				std::cout << "map (0,0) : " << map_origin_x << ", " << map_origin_y << std::endl;
+				///////////////////////////////////////////////////////////////////////////////////
+
+
+
+				///////////////////////////////////////////////////////////////////////////////////
+				// grid 포인트 데이터를 저장한다. //
+				int point_data_set[point_data.data.size()/2][2];
+				int j = 0;
+				for ( int i=0; i<(point_data.data.size()/2); i++ )
+				{
+					point_data_set[i][0] = point_data.data[j];
+					point_data_set[i][1] = point_data.data[j+1];
+					std::cout << point_data_set[i][0] << ", " << point_data_set[i][1] << std::endl;
+					j+=2;
+				}
+				///////////////////////////////////////////////////////////////////////////////////
+
+
+
+				///////////////////////////////////
+				// 방향 찾기 초기화 //
+				step_one_rotation_flag = true;
+				make_target_yaw_flag = true;
+
+				step_two_rotation_flag = true;
+				range_flag = true;
+				range_out_flag = true;
+
+				find_direction(point_data_set);
+				///////////////////////////////////
+
+
+				while ( ros::ok() )
+				{
+
+					///////////////////////////////////////////////////////////////////////////////////
+					if ( step_two_rotation_flag )
+					{
+						if ( step_one_rotation_flag )
+						{
+							// 1. 목표 지점 향하게 만들기 //
+							ros::spinOnce();
+							move_pub_one.publish(step_one_order);
+						}
+						else
+						{
+							// 회전 후 카토그래퍼 안정화를 위해 쉬는 시간 //
+							////////////////////////////////////////////////////////
+							/*
+			    				start = std::chrono::system_clock::now();
+							sec = std::chrono::system_clock::now() - start;
+							while ( sec.count() < 0.2 )
+							{
+								sec = std::chrono::system_clock::now() - start;
+							}
+							*/
+							////////////////////////////////////////////////////////
+
+
+							// 2. 목표 지점으로 직진하고 도착하면 멈추기 //
+							std::cout <<"target point : "<< target_x <<", " << target_y <<std::endl;
+
+							step_one_done_flag.done_flag = 1;
+							step_one_done.publish(step_one_done_flag);
+
+							ros::spinOnce();
+							move_pub_two.publish(step_two_order);
+							if ( step_two_rotation_flag )
+							{
+								///////////////////////////////////
+								/*
+				    				start = std::chrono::system_clock::now();
+								sec = std::chrono::system_clock::now() - start;
+
+								while ( sec.count() < 0.3 )
+								{
+									sec = std::chrono::system_clock::now() - start;
+								}
+								step_two_order.move_message = 5;
+								move_pub_two.publish(step_two_order);	
+								*/
+								///////////////////////////////////
+
+								///////////////////////////////////
+								xy_count = xy_count - 1;
+								find_direction(point_data_set);
+								step_one_rotation_flag = true;
+								make_target_yaw_flag = true;
+								step_one_done_flag.done_flag = 0;
+								step_one_done.publish(step_one_done_flag);
+								///////////////////////////////////		
+							}
+						
+						}
+					}
+					else
+					{
+						// 어떤경우든 들어오면 일단 정지 //
+						step_two_order.move_message = 5;
+						move_pub_two.publish(step_two_order);
+
+						///////////////////////////////////
+						step_one_rotation_flag = true;
+						make_target_yaw_flag = true;
+
+						step_two_rotation_flag = true;
+						range_flag = true;
+						range_out_flag = true;
+
+						find_direction(point_data_set);
+						///////////////////////////////////
+
+
+						/////////////////////////////////////////////////////////////////////////////////////////////////////////
+						// 포인트 이동 후 모드가 바뀐지 확인 //
+						control_mode = ros::topic::waitForMessage<std_msgs::Int32>("control_tower_topic",nh,ros::Duration(1.0));
+						if (control_mode)
+						{
+							mode_value = control_mode->data;
+							if ( mode_value == 200 || mode_value == 300 )
+							{
+								break;
+							}
+						}
+						/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+						if ( !shutdown_flag )
+						{
+							for ( int i=0; i<5; i++)
+							{
+								step_two_order.move_message = 5;
+								move_pub_two.publish(step_two_order);
+							}
+							break;
+						}
+					}
+	
+				}
+
 			}
 			else
 			{
-				// 회전 후 카토그래퍼 안정화를 위해 쉬는 시간 //
-				////////////////////////////////////////////////////////
-				/*
-    				start = std::chrono::system_clock::now();
-				sec = std::chrono::system_clock::now() - start;
-				while ( sec.count() < 0.2 )
-				{
-					sec = std::chrono::system_clock::now() - start;
-				}
-				*/
-				////////////////////////////////////////////////////////
-
-
-				// 2. 목표 지점으로 직진하고 도착하면 멈추기 //
-				std::cout <<"target point : "<< target_x <<", " << target_y <<std::endl;
-				step_one_done_flag.done_flag = 1;
-				step_one_done.publish(step_one_done_flag);
-				ros::spinOnce();
-				move_pub_two.publish(step_two_order);
-				if ( step_two_rotation_flag )
-				{
-					///////////////////////////////////
-					/*
-	    				start = std::chrono::system_clock::now();
-					sec = std::chrono::system_clock::now() - start;
-
-					while ( sec.count() < 0.2 )
-					{
-						sec = std::chrono::system_clock::now() - start;
-					}
-					step_two_order.move_message = 5;
-					move_pub_two.publish(step_two_order);
-					*/
-					///////////////////////////////////
-
-					///////////////////////////////////
-					xy_count = xy_count - 1;
-					find_direction(point_data_set);
-					step_one_rotation_flag = true;
-					make_target_yaw_flag = true;
-					step_one_done_flag.done_flag = 0;
-					step_one_done.publish(step_one_done_flag);
-					///////////////////////////////////		
-				}
-			
+				std::cout << "mode is : " << mode_value << std::endl;
+				std::cout << "this mode is not used in here" << mode_value << std::endl;
 			}
 		}
 		else
 		{
-			// 어떤경우든 들어오면 일단 정지 //
-			step_two_order.move_message = 5;
-			move_pub_two.publish(step_two_order);
-
-			///////////////////////////////////
-			step_one_rotation_flag = true;
-			make_target_yaw_flag = true;
-
-			step_two_rotation_flag = true;
-			range_flag = true;
-			range_out_flag = true;
-
-			find_direction(point_data_set);
-			///////////////////////////////////
-
-			if ( !shutdown_flag )
-			{
-				for ( int i=0; i<5; i++)
-				{
-					step_two_order.move_message = 5;
-					move_pub_two.publish(step_two_order);
-				}
-				ros::shutdown();
-			}
+			std::cout << "mode is not set" << std::endl;
 		}
 
 	}
@@ -1345,4 +1042,4 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
 )
-
+############################################################################################################################

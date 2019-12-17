@@ -97,6 +97,7 @@ cd && cd project_black/src/project_ros_cpp/src && vi clean_map.cpp
 #define _USE_MATH_DEFINES
 
 #define map_square_padding 10
+// 상하좌우5px = 10cm //
 #define wall_padding 10
 
 #include "pathFinder.h" // pathFinder 헤더 추가 
@@ -104,9 +105,13 @@ cd && cd project_black/src/project_ros_cpp/src && vi clean_map.cpp
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/MultiArrayDimension.h"
 #include "std_msgs/Int32MultiArray.h"
+#include "std_msgs/Int32.h"
 
 std_msgs::Int32MultiArray clean_point;
 cv::Mat i_want_to_see;
+
+std::chrono::system_clock::time_point time_start;
+std::chrono::duration<double> limit_sec;
 
 bool get_mat_flag = true;
 
@@ -309,21 +314,49 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 
 int main(int argc, char **argv)
 {
-	printf("here 1\n");
+
 	ros::init(argc, argv, "map_reader");
 	ros::NodeHandle n;
 	ros::Publisher point_pub = n.advertise<std_msgs::Int32MultiArray>("clean_point_topic", 1);
-	printf("here 2\n");
+
+	while ( ros::ok() )
+	{
+		std_msgs::Int32::ConstPtr move_ready_flag = ros::topic::waitForMessage<std_msgs::Int32>("move_ready_topic",n,ros::Duration(1.0));
+		if(move_ready_flag)
+		{
+			int move_ready = move_ready_flag->data;
+			if ( move_ready == 100)
+			{
+				break;
+			}
+		}
+		else
+		{
+			std::cout << "wait drawing map" <<std::endl;
+		}
+	}
+
 	while ( ros::ok() )
 	{
 		nav_msgs::OccupancyGrid::ConstPtr gird = ros::topic::waitForMessage<nav_msgs::OccupancyGrid>("/map",n,ros::Duration(1.0));
-		mapCallback(gird);
-		if ( !get_mat_flag )
+		if ( gird )
 		{
-			printf("here 3\n");
-			point_pub.publish(clean_point);
-			//ros::spin();
-			break;
+			mapCallback(gird);
+			if ( !get_mat_flag )
+			{
+				time_start = std::chrono::system_clock::now();
+				limit_sec = std::chrono::system_clock::now() - time_start;
+				while ( limit_sec.count() < 5.0 )
+				{
+					point_pub.publish(clean_point);
+					limit_sec = std::chrono::system_clock::now() - time_start;
+				}
+				break;
+			}
+		}
+		else
+		{
+			std::cout << "wait drawing map data" <<std::endl;
 		}
 	}
 	cv::imshow("i_want_to_see", i_want_to_see);
@@ -381,6 +414,5 @@ include_directories(
 )
 
 */
-
 ############################################################################################################################
 
