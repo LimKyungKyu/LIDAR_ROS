@@ -223,8 +223,7 @@ def callback(data):
 		robot.set_motors(max_speed, max_speed)
 		left_now = max_speed
 		right_now = max_speed
-
-	if ( move_value == 2 ):
+	elif ( move_value == 2 ):
 		# 좌회전
 		if ( (left_now == 0.0) and (right_now == 0.0) ):
 			robot.set_motors(max_speed-change_speed, max_speed)
@@ -252,8 +251,7 @@ def callback(data):
 			else :
 				robot.right_motor.value = right_now + change_speed
 				right_now = right_now + change_speed
-
-	if ( move_value == 3 ):
+	elif ( move_value == 3 ):
 		# 우회전
 		if ( (left_now == 0.0) and (right_now == 0.0) ):
 			robot.set_motors(max_speed, max_speed-change_speed)
@@ -281,32 +279,27 @@ def callback(data):
 			else:
 				robot.right_motor.value = right_now - change_speed
 				right_now = right_now - change_speed
-
-	if ( move_value == 4 ):
+	elif ( move_value == 4 ):
 		# 후진
 		robot.set_motors(-max_speed, -max_speed)
 		left_now = -max_speed
 		right_now = -max_speed
-
-	if ( move_value == 5 ):
+	elif ( move_value == 5 ):
 		# 정지
 		robot.set_motors(0.0, 0.0)		
 		left_now = 0.0
 		right_now = 0.0
-
-	if ( move_value == 6 ):
+	elif ( move_value == 6 ):
 		# 제자리 우회전
 		robot.set_motors(rotation_speed, -rotation_speed)		
 		left_now = rotation_speed
 		right_now = -rotation_speed
-
-	if ( move_value == 7 ):
+	elif ( move_value == 7 ):
 		# 제자리 좌회전
 		robot.set_motors(-rotation_speed, rotation_speed)		
 		left_now = -rotation_speed
 		right_now = rotation_speed
-
-	if ( move_value == 8 ):
+	elif ( move_value == 8 ):
 		# 직진 (점진적 증가)
 		if ( left_now >= max_speed ):
 			robot.left_motor.value = max_speed
@@ -501,7 +494,7 @@ bool shutdown_flag = true;
 // cm 단위 //
 #define grid_interval_cm 4
 // 각도 범위 // 
-#define degree_range 2
+#define degree_range 10
 
 project_ros_cpp::nano_control step_one_order;
 project_ros_cpp::nano_control step_two_order;
@@ -511,6 +504,9 @@ std_msgs::Int32MultiArray point_data;
 
 std::chrono::system_clock::time_point time_start;
 std::chrono::duration<double> limit_sec;
+
+std::string file_path("/home/nvidia/map_done_flag");
+//std::string file_path("/home/jetbot/map_done_flag");
 
 void find_direction(int point_data_set[][2])
 {
@@ -590,7 +586,7 @@ void find_direction(int point_data_set[][2])
 		}
 		catch(tf2::LookupException& e)
 		{
-			printf("can't find location\n");
+			printf("fail tf \n");
 			step_two_rotation_flag= false;
 			xy_count = xy_count - 1;
 			return;
@@ -800,19 +796,26 @@ int main(int argc, char **argv)
 
 			    				time_start = std::chrono::system_clock::now();
 							limit_sec = std::chrono::system_clock::now() - time_start;
-							while ( limit_sec.count() < 0.1 )
+							while ( limit_sec.count() < 0.05 )
 							{
 								limit_sec = std::chrono::system_clock::now() - time_start;
+							}
+
+							for (int i=0; i<50; i++)
+							{
+								step_one_order.move_message = 5;
+								move_pub_one.publish(step_one_order);
 							}
 						}
 						else
 						{
 							// 2. 목표 지점으로 직진하기 //
 							std::cout <<"target point : "<< target_x <<", " << target_y <<std::endl;
+							std::cout << "직진" <<std::endl;
 							int step_count = 0;
-							while ( step_count < 5)
+							while ( step_count < 10)
 							{
-								for (int i=0; i<10; i++)
+								for (int i=0; i<50; i++)
 								{
 									step_two_order.move_message = 1;
 									move_pub_two.publish(step_two_order);
@@ -820,12 +823,12 @@ int main(int argc, char **argv)
 
 				    				time_start = std::chrono::system_clock::now();
 								limit_sec = std::chrono::system_clock::now() - time_start;
-								while ( limit_sec.count() < 0.05 )
+								while ( limit_sec.count() < 0.01 )
 								{
 									limit_sec = std::chrono::system_clock::now() - time_start;
 								}
 
-								for (int i=0; i<10; i++)
+								for (int i=0; i<50; i++)
 								{
 									step_two_order.move_message = 5;
 									move_pub_two.publish(step_two_order);
@@ -833,24 +836,30 @@ int main(int argc, char **argv)
 								++step_count;
 							}
 
-							for (int i=0; i<10; i++)
+							for (int i=0; i<50; i++)
 							{
 								step_two_order.move_message = 5;
 								move_pub_two.publish(step_two_order);
 							}
 
-							///////////////////////////////////
-							xy_count = xy_count - 1;
+							if ( xy_count != 0 )
+							{
+								///////////////////////////////////
+								xy_count = xy_count - 1;
 
-							step_one_rotation_flag = true;
-							make_target_yaw_flag = true;
+								step_one_rotation_flag = true;
+								make_target_yaw_flag = true;
 
-							step_two_rotation_flag = true;
-							range_flag = true;
-							range_out_flag = true;
+								step_two_rotation_flag = true;
+								range_flag = true;
+								range_out_flag = true;
 
-							find_direction(point_data_set);
-							///////////////////////////////////	
+								find_direction(point_data_set);
+								///////////////////////////////////
+							}
+							else
+							{
+							}
 						
 						}
 					}
@@ -881,10 +890,24 @@ int main(int argc, char **argv)
 							mode_value = atoi(mode_data.c_str());
 							open_file.close();
 
-							if ( mode_value == 200 || mode_value == 300 )
+							if ( mode_value == 300 || mode_value == 310)
 							{
+								std::cout << "mode change" << std::endl;
 								break;
 							}
+
+							if ( mode_value == 900 )
+							{
+				    				time_start = std::chrono::system_clock::now();
+								limit_sec = std::chrono::system_clock::now() - time_start;
+								while ( limit_sec.count() < 3.0 )
+								{
+									limit_sec = std::chrono::system_clock::now() - time_start;
+								}
+								xy_count = xy_count - 1;
+								step_two_rotation_flag = false;
+							}
+
 						}
 						else
 						{
@@ -895,11 +918,16 @@ int main(int argc, char **argv)
 
 						if ( !shutdown_flag )
 						{
+							std::cout << "clean done" << std::endl;
 							for ( int i=0; i<5; i++)
 							{
 								step_two_order.move_message = 5;
 								move_pub_two.publish(step_two_order);
 							}
+
+							std::ofstream map_move_done(file_path);
+							map_move_done << 1 << std::endl;
+							map_move_done.close();
 							break;
 						}
 					}
