@@ -505,8 +505,8 @@ std_msgs::Int32MultiArray point_data;
 std::chrono::system_clock::time_point time_start;
 std::chrono::duration<double> limit_sec;
 
-std::string file_path("/home/nvidia/map_done_flag");
-//std::string file_path("/home/jetbot/map_done_flag");
+std::string done_file_path("/home/nvidia/map_done_flag");
+//std::string done_file_path("/home/jetbot/map_done_flag");
 
 void find_direction(int point_data_set[][2])
 {
@@ -857,9 +857,6 @@ int main(int argc, char **argv)
 								find_direction(point_data_set);
 								///////////////////////////////////
 							}
-							else
-							{
-							}
 						
 						}
 					}
@@ -919,15 +916,19 @@ int main(int argc, char **argv)
 						if ( !shutdown_flag )
 						{
 							std::cout << "clean done" << std::endl;
+
 							for ( int i=0; i<5; i++)
 							{
 								step_two_order.move_message = 5;
 								move_pub_two.publish(step_two_order);
 							}
 
-							std::ofstream map_move_done(file_path);
-							map_move_done << 1 << std::endl;
+							shutdown_flag = true;
+
+							std::ofstream map_move_done(done_file_path);
+							map_move_done << 0 << std::endl;
 							map_move_done.close();
+
 							break;
 						}
 					}

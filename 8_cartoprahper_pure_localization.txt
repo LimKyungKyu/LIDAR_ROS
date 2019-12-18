@@ -121,8 +121,9 @@ int map_origin_x = 0, map_origin_y = 0;
 
 bool get_mat_flag = true;
 
-std::string file_path("/home/nvidia/map_done_flag");
-//std::string file_path("/home/jetbot/map_done_flag");
+std::string mode_file_path("/home/nvidia/mode");
+std::string done_file_path("/home/nvidia/map_done_flag");
+//std::string done_file_path("/home/jetbot/map_done_flag");
 
 int add_padding(cv::Mat resizing_mat)
 {
@@ -138,204 +139,240 @@ int add_padding(cv::Mat resizing_mat)
 
 void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 {
-	if (get_mat_flag)
+	printf("here 3\n");
+	std_msgs::Header header = msg->header;
+	nav_msgs::MapMetaData info = msg->info;
+
+	tf::TransformListener tfl;
+	tf::StampedTransform my_test_transform;
+
+	std::string start = std::string("/map"); 
+	std::string move = std::string("/base_footprint");
+
+	/*
+	std::cout<<"Map 으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
+	std::cout<<"	("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
+	std::cout<<"축 회전 각 [degree] (roll, pitch, yaw)"<<std::endl;
+	std::cout<<"	("<<roll*my_RAD2DEG<<", "<<pitch*my_RAD2DEG<<", "<<yaw*my_RAD2DEG<<")"<< std::endl;
+	*/
+
+
+	// 맵의 metadata 데이터 획득 //
+	std::vector<signed char> data = msg->data;
+	// rows,cols으로 변환 //
+	cv::Mat meta_data_resize = cv::Mat(data).reshape(1,info.height);
+	// opencv에서 활용가능한 데이터로 변환 //
+	cv::Mat meta_to_opencv;
+	meta_data_resize.convertTo(meta_to_opencv,CV_8UC1);
+	// 정사각형으로 변환 하기 위한 rows,cols획득//
+	int resize_square_value = add_padding(meta_to_opencv);
+
+	// 상하좌우 10씩 패딩시키며 정사각형의 이미지 생성 //
+	cv::Mat original(resize_square_value, resize_square_value, CV_8UC1, cv::Scalar(0));
+	for (int i=0; i<meta_to_opencv.rows; i++) // 행
+		for (int j=0; j<meta_to_opencv.cols; j++) // 열
+			original.at<unsigned char>(i+map_square_padding,j+map_square_padding) = meta_to_opencv.at<unsigned char>(i,j);
+
+	// 벽에 대한 데이터를 상하좌우 5px씩 확장 //
+	cv::Mat wall_padding_mat(original.size(),original.type(),cv::Scalar(0));
+	// 10이면 벽의 상하좌우로 5px씩, 10cm
+	for (int i=0; i<original.rows; i++) // 행
+		for (int j=0; j<original.cols; j++) // 열
+			if ( int(original.at<unsigned char>(i,j)) > 80 )
+				for ( int k=(-wall_padding/2); k<=(wall_padding/2); k++ )
+					for ( int l=(-wall_padding/2); l<=(wall_padding/2); l++ )
+					{
+						//std::cout << "here 2" << std::endl;
+						if ( (i+k)<0 || (i+k)>=original.rows || (j+l)<0 || (j+l)>=original.cols ) {}
+						else { wall_padding_mat.at<unsigned char>((i+k),(j+l))=255; }
+					}
+
+	// 외부는 하얀색 내부는 검은색으로 만들기 위하여 최외곽 경계를 찾아낸다. //
+	cv::Mat canny_temp;
+	cv::Canny(wall_padding_mat, canny_temp, 100, 100*3, 3);
+	std::vector<std::vector<cv::Point>> contours;
+	std::vector<cv::Vec4i> hierarchy;
+	cv::findContours(canny_temp, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
+
+	/*
+	cv::Mat show_contour;
+	cv::cvtColor(wall_padding_mat, show_contour, cv::COLOR_GRAY2BGR);
+	for ( int i=0; i<int(contours.size()); i++)
 	{
+		cv::drawContours(show_contour, contours, i, cv::Scalar(255,0,0),2,8,hierarchy,0,cv::Point());
+	}
+	cv::imshow("show_contour", show_contour);
+	//std::cout << contours[0] << std::endl;
+	//std::cout << contours[0][0] << std::endl;
+	//std::cout << contours[0][0].x << std::endl;
+	//std::cout << contours[0][0].y << std::endl;
+	//std::cout << int(contours.size()) << std::endl;
+	//std::cout << int(contours[0].size()) << std::endl;
+	*/
 
-		printf("here 3\n");
-		std_msgs::Header header = msg->header;
-		nav_msgs::MapMetaData info = msg->info;
+	// 최외곽으로부터 내부를 검은색으로 만든다. //
+	cv::Mat back_ground_white(wall_padding_mat.size(), wall_padding_mat.type(), cv::Scalar(255));
+	cv::fillPoly(back_ground_white, contours, cv::Scalar(0));
 
-		tf::TransformListener tfl;
-		tf::StampedTransform my_test_transform;
-
-		std::string start = std::string("/map"); 
-		std::string move = std::string("/base_footprint");
-
-		/*
-		std::cout<<"Map 으로 부터 현재 위치 [metric] (x, y, z)"<<std::endl;
-		std::cout<<"	("<<Coordinate_3D.getX()<<", "<<Coordinate_3D.getY()<<", "<<Coordinate_3D.getZ()<<")"<<std::endl;
-		std::cout<<"축 회전 각 [degree] (roll, pitch, yaw)"<<std::endl;
-		std::cout<<"	("<<roll*my_RAD2DEG<<", "<<pitch*my_RAD2DEG<<", "<<yaw*my_RAD2DEG<<")"<< std::endl;
-		*/
+	// 기존 매트릭스와 합친다. //
+	wall_padding_mat = wall_padding_mat + back_ground_white;
 
 
-		// 맵의 metadata 데이터 획득 //
-		std::vector<signed char> data = msg->data;
-		// rows,cols으로 변환 //
-		cv::Mat meta_data_resize = cv::Mat(data).reshape(1,info.height);
-		// opencv에서 활용가능한 데이터로 변환 //
-		cv::Mat meta_to_opencv;
-		meta_data_resize.convertTo(meta_to_opencv,CV_8UC1);
-		// 정사각형으로 변환 하기 위한 rows,cols획득//
-		int resize_square_value = add_padding(meta_to_opencv);
+	// 경계부분도 채워야 하므로 그려준다. //
+	for ( int i=0; i<int(contours.size()); i++)
+	{
+		cv::drawContours(wall_padding_mat, contours, i, cv::Scalar(255),2,8,hierarchy,0,cv::Point());
+	}
 
-		// 상하좌우 10씩 패딩시키며 정사각형의 이미지 생성 //
-		cv::Mat original(resize_square_value, resize_square_value, CV_8UC1, cv::Scalar(0));
-		for (int i=0; i<meta_to_opencv.rows; i++) // 행
-			for (int j=0; j<meta_to_opencv.cols; j++) // 열
-				original.at<unsigned char>(i+map_square_padding,j+map_square_padding) = meta_to_opencv.at<unsigned char>(i,j);
+	// 이미지 확인을 위한 함수 //
+	// rviz의 좌측 하단 (0,0)
+	ROS_INFO("Got map %d %d", info.width, info.height);
+	ROS_INFO("Map Origin x %f", info.origin.position.x);
+	ROS_INFO("Map Origin y %f", info.origin.position.y);
 
-		// 벽에 대한 데이터를 상하좌우 5px씩 확장 //
-		cv::Mat wall_padding_mat(original.size(),original.type(),cv::Scalar(0));
-		// 10이면 벽의 상하좌우로 5px씩, 10cm
-		for (int i=0; i<original.rows; i++) // 행
-			for (int j=0; j<original.cols; j++) // 열
-				if ( int(original.at<unsigned char>(i,j)) > 80 )
-					for ( int k=(-wall_padding/2); k<=(wall_padding/2); k++ )
-						for ( int l=(-wall_padding/2); l<=(wall_padding/2); l++ )
-						{
-							//std::cout << "here 2" << std::endl;
-							if ( (i+k)<0 || (i+k)>=original.rows || (j+l)<0 || (j+l)>=original.cols ) {}
-							else { wall_padding_mat.at<unsigned char>((i+k),(j+l))=255; }
-						}
+	// metadata의 값은 y가 반전되어 있으므로 Mat을 x축에 대하여 회전시킨다.
+	cv::flip(wall_padding_mat, wall_padding_mat, 0);
 
-		// 외부는 하얀색 내부는 검은색으로 만들기 위하여 최외곽 경계를 찾아낸다. //
-		cv::Mat canny_temp;
-		cv::Canny(wall_padding_mat, canny_temp, 100, 100*3, 3);
-		std::vector<std::vector<cv::Point>> contours;
-		std::vector<cv::Vec4i> hierarchy;
-		cv::findContours(canny_temp, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
+	// metadata에서 넘어오는 정보는 m단위이므로 100을 곱하고
+	// 2cm당 1px 이므로 2로 나눠준다.
+	// 패딩한만큼 위치를 옮겨준다.
+	map_origin_x = (-info.origin.position.x*100.0/2.0) + map_square_padding ;
+	map_origin_y = wall_padding_mat.rows - (-info.origin.position.y*100.0/2.0+map_square_padding) ;
 
-		/*
-		cv::Mat show_contour;
-		cv::cvtColor(wall_padding_mat, show_contour, cv::COLOR_GRAY2BGR);
-		for ( int i=0; i<int(contours.size()); i++)
+
+	// 3채널로 변환시킨다.
+	/*
+	// try 1 //
+	cv::Mat in[] = {wall_padding_mat, wall_padding_mat, wall_padding_mat};
+	merge(in, 3, color_map);
+	i_want_to_see = color_map.clone();
+	*/
+
+	/*
+	// try 2 //
+	wall_padding_mat.convertTo(color_map,CV_8UC3);
+	i_want_to_see = color_map.clone();
+	*/
+
+	// try 3 //
+	cv::Mat color_map(wall_padding_mat.rows, wall_padding_mat.cols, CV_8UC3, cv::Scalar(0));
+	int color_value = 0;
+
+
+
+	for (int i=0; i<wall_padding_mat.rows; i++) // 행
+		for (int j=0; j<wall_padding_mat.cols; j++) // 열
+			{
+				color_value = wall_padding_mat.at<unsigned char>(i,j);
+				color_map.at<cv::Vec3b>(i,j) = cv::Vec3b(color_value,color_value,color_value);
+			}
+		
+	i_want_to_see = color_map.clone();
+
+
+	// map(0,0)의 Mat에서의 (i,j)위치를 찍어준다. 
+	cv::circle( color_map, cv::Point(map_origin_x, map_origin_y), 2, cv::Scalar(0,255,0), -1);
+	std::cout << "map x(i) : " << map_origin_x << std::endl;
+	std::cout << "map y(j) : " << map_origin_y << std::endl;
+
+	try
+	{
+		tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
+		tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
+		tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
+
+		int nano_origin_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
+		int nano_origin_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
+
+		// nano(i,j)의 Mat에서의 (i,j)위치를 찍어준다.
+		cv::circle( color_map, cv::Point(nano_origin_x, nano_origin_y), 2, cv::Scalar(255,0,0), -1);
+		std::cout << "nano x(i) : " << nano_origin_x <<std::endl;
+		std::cout << "nano y(j) : " << nano_origin_y <<std::endl;
+
+		//cv::imshow("meta_data", meta_data_resize);
+		//cv::imshow("original", original);
+		//cv::imshow("back_ground_white", back_ground_white);
+		cv::imshow("color_map", color_map);
+
+
+		// 클래스 선언 //
+		PathFinder path;
+		// nano의 시작 좌표 설정 //
+		Position start(nano_origin_x,nano_origin_y);
+		// grid좌표를 담을 공간 선언 //
+		std::list<Position> pathList;
+		//path.setMoveInterval(5); // default : 5px = 10cm
+
+
+
+		////////////////////////////////////////////////////////////////////////////////////
+		// 경로 찾기 //
+		std::ifstream map_done_check(done_file_path);
+		std::string map_done_data;
+		int done_check_value = 0;
+		if( map_done_check.is_open() )
 		{
-			cv::drawContours(show_contour, contours, i, cv::Scalar(255,0,0),2,8,hierarchy,0,cv::Point());
-		}
-		cv::imshow("show_contour", show_contour);
-		//std::cout << contours[0] << std::endl;
-		//std::cout << contours[0][0] << std::endl;
-		//std::cout << contours[0][0].x << std::endl;
-		//std::cout << contours[0][0].y << std::endl;
-		//std::cout << int(contours.size()) << std::endl;
-		//std::cout << int(contours[0].size()) << std::endl;
-		*/
+			map_done_check >> map_done_data;
+			done_check_value = atoi(map_done_data.c_str());
+			map_done_check.close();
 
-		// 최외곽으로부터 내부를 검은색으로 만든다. //
-		cv::Mat back_ground_white(wall_padding_mat.size(), wall_padding_mat.type(), cv::Scalar(255));
-		cv::fillPoly(back_ground_white, contours, cv::Scalar(0));
-
-		// 기존 매트릭스와 합친다. //
-		wall_padding_mat = wall_padding_mat + back_ground_white;
-
-
-		// 경계부분도 채워야 하므로 그려준다. //
-		for ( int i=0; i<int(contours.size()); i++)
-		{
-			cv::drawContours(wall_padding_mat, contours, i, cv::Scalar(255),2,8,hierarchy,0,cv::Point());
-		}
-
-		// 이미지 확인을 위한 함수 //
-		// rviz의 좌측 하단 (0,0)
-		ROS_INFO("Got map %d %d", info.width, info.height);
-		ROS_INFO("Map Origin x %f", info.origin.position.x);
-		ROS_INFO("Map Origin y %f", info.origin.position.y);
-
-		// metadata의 값은 y가 반전되어 있으므로 Mat을 x축에 대하여 회전시킨다.
-		cv::flip(wall_padding_mat, wall_padding_mat, 0);
-
-		// metadata에서 넘어오는 정보는 m단위이므로 100을 곱하고
-		// 2cm당 1px 이므로 2로 나눠준다.
-		// 패딩한만큼 위치를 옮겨준다.
-		map_origin_x = (-info.origin.position.x*100.0/2.0) + map_square_padding ;
-		map_origin_y = wall_padding_mat.rows - (-info.origin.position.y*100.0/2.0+map_square_padding) ;
-
-
-		// 3채널로 변환시킨다.
-		/*
-		// try 1 //
-		cv::Mat in[] = {wall_padding_mat, wall_padding_mat, wall_padding_mat};
-		merge(in, 3, color_map);
-		i_want_to_see = color_map.clone();
-		*/
-
-		/*
-		// try 2 //
-		wall_padding_mat.convertTo(color_map,CV_8UC3);
-		i_want_to_see = color_map.clone();
-		*/
-
-		//
-		cv::Mat color_map(wall_padding_mat.rows, wall_padding_mat.cols, CV_8UC3, cv::Scalar(0));
-		int color_value = 0;
-		for (int i=0; i<wall_padding_mat.rows; i++) // 행
-			for (int j=0; j<wall_padding_mat.cols; j++) // 열
+			if ( done_check_value )
+			{
+				// 1: 실시간 이미지 보여주기, 실제 사용시 0 으로 수정 (이미지 안보여주기) //
+				pathList = path.findCoveragePath(start, i_want_to_see, 0);
+				clean_point.data.clear();
+				for (auto it = pathList.begin(); it != pathList.end(); ++it)
 				{
-					color_value = wall_padding_mat.at<unsigned char>(i,j);
-					color_map.at<cv::Vec3b>(i,j) = cv::Vec3b(color_value,color_value,color_value);
+					printf("[%d, %d]\n", (*it).x, (*it).y);
+					clean_point.data.push_back( (*it).x );
+					clean_point.data.push_back( (*it).y );
 				}
-			
-		i_want_to_see = color_map.clone();
 
 
-		// map(0,0)의 Mat에서의 (i,j)위치를 찍어준다. 
-		cv::circle( color_map, cv::Point(map_origin_x, map_origin_y), 2, cv::Scalar(0,255,0), -1);
-		std::cout << "map x(i) : " << map_origin_x << std::endl;
-		std::cout << "map y(j) : " << map_origin_y << std::endl;
-
-		try
-		{
-			tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
-			tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
-			tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
-
-			int nano_origin_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
-			int nano_origin_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
-
-			// nano(i,j)의 Mat에서의 (i,j)위치를 찍어준다.
-			cv::circle( color_map, cv::Point(nano_origin_x, nano_origin_y), 2, cv::Scalar(255,0,0), -1);
-			std::cout << "nano x(i) : " << nano_origin_x <<std::endl;
-			std::cout << "nano y(j) : " << nano_origin_y <<std::endl;
-
-			//cv::imshow("meta_data", meta_data_resize);
-			//cv::imshow("original", original);
-			//cv::imshow("back_ground_white", back_ground_white);
-			cv::imshow("color_map", color_map);
+				clean_point.data.push_back(map_origin_x);
+				clean_point.data.push_back(map_origin_y);
 
 
-			//////////////////////////////////////////////////////////////////////////////////////////////
-			// 클래스 선언 //
-			PathFinder path;
-			// nano의 시작 좌표 설정 //
-			Position start(nano_origin_x,nano_origin_y);
-			// grid좌표를 담을 공간 선언 //
-			std::list<Position> pathList;
-			//path.setMoveInterval(5); // default : 5px = 10cm
-
-			// 경로 찾기 //
-			// 1: 실시간 이미지 보여주기, 실제 사용시 0 으로 수정 (이미지 안보여주기) //
-			pathList = path.findCoveragePath(start, wall_padding_mat, 0);
-
-			clean_point.data.clear();
-			for (auto it = pathList.begin(); it != pathList.end(); ++it)
+				for ( int i=0; i< clean_point.data.size(); i+=2 )
+				{
+					std::cout << "pub [" << clean_point.data[i] << ", "
+					<< clean_point.data[i+1] << "]" <<std::endl;
+				}
+			}
+			else
 			{
-				printf("[%d, %d]\n", (*it).x, (*it).y);
-				clean_point.data.push_back( (*it).x );
-				clean_point.data.push_back( (*it).y );
+				pathList = path.findCoveragePath(start, wall_padding_mat, 0);
+				clean_point.data.clear();
+				for (auto it = pathList.begin(); it != pathList.end(); ++it)
+				{
+					printf("[%d, %d]\n", (*it).x, (*it).y);
+					clean_point.data.push_back( (*it).x );
+					clean_point.data.push_back( (*it).y );
+				}
+
+
+				clean_point.data.push_back(map_origin_x);
+				clean_point.data.push_back(map_origin_y);
+
+
+				for ( int i=0; i< clean_point.data.size(); i+=2 )
+				{
+					std::cout << "pub [" << clean_point.data[i] << ", "
+					<< clean_point.data[i+1] << "]" <<std::endl;
+				}
 			}
 
-
-			clean_point.data.push_back(map_origin_x);
-			clean_point.data.push_back(map_origin_y);
-
-
-			for ( int i=0; i< clean_point.data.size(); i+=2 )
-			{
-				std::cout << "pub [" << clean_point.data[i] << ", "
-				<< clean_point.data[i+1] << "]" <<std::endl;
-			}
-			//////////////////////////////////////////////////////////////////////////////////////////////
-
-			get_mat_flag = false;
-
-
 		}
-		catch(tf2::LookupException& e)
-		{
-			printf("can't find location\n");
-			return;
-		}
+		////////////////////////////////////////////////////////////////////////////////////
+
+
+
+	}
+	catch(tf2::LookupException& e)
+	{
+		printf("can't find location\n");
+		get_mat_flag = false;
+		return;
 	}
 
 }
@@ -352,6 +389,8 @@ int main(int argc, char **argv)
 
 	std::string start = std::string("/map"); 
 	std::string move = std::string("/base_footprint");
+
+	int old_x = 0, old_y = 0, new_x = 0, new_y = 0;
 
 
 	while ( ros::ok() )
@@ -379,7 +418,7 @@ int main(int argc, char **argv)
 			if ( grid )
 			{
 				mapCallback(grid);
-				if ( !get_mat_flag )
+				if ( get_mat_flag )
 				{
 					time_start = std::chrono::system_clock::now();
 					limit_sec = std::chrono::system_clock::now() - time_start;
@@ -388,7 +427,7 @@ int main(int argc, char **argv)
 						point_pub.publish(clean_point);
 						limit_sec = std::chrono::system_clock::now() - time_start;
 					}
-					get_mat_flag = true;
+					get_mat_flag = false;
 					break;
 				}
 			}
@@ -398,60 +437,117 @@ int main(int argc, char **argv)
 			}
 		}
 
+
+		old_x = 0;
+		old_y = 0;
+		new_x = 0;
+		new_y = 0;
+
+		time_start = std::chrono::system_clock::now();
+		limit_sec = std::chrono::system_clock::now() - time_start;
+
 		while ( ros::ok() )
 		{
 
 			try
 			{
+				///////////////////////////////////////////////////////////////////////////////////////////////////
 				tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
 				tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
 				tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
 
-				int nano_origin_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
-				int nano_origin_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
+				new_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
+				new_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
 
 				// 내 위치를 중심으로 7x7 채우기
 				// 7x7 = 중심으로부터 위로 3칸, 아래로 3칸 : move_log = 6 입력하면 된다.
 				// cols = 열 = x, rows = 행 = y
-				for ( int k = (nano_origin_x-move_log/2); k <= (nano_origin_x+move_log/2); k++ )
-					for ( int l = (nano_origin_y-move_log/2); l <= (nano_origin_y+move_log/2); l++ )
+				for ( int k = (new_x-move_log/2); k <= (new_x+move_log/2); k++ ) // 열 = x
+				{
+					for ( int l = (new_y-move_log/2); l <= (new_y+move_log/2); l++ ) // 행 = y
 					{
 						//std::cout << "here 2" << std::endl;
 						if ( k<0 || k>=i_want_to_see.rows || l<0 || l>=i_want_to_see.cols ) {}
 						else
 						{
 							if (i_want_to_see.at<cv::Vec3b>(l,k) != cv::Vec3b(0, 0, 0)) {}
-							else { i_want_to_see.at<cv::Vec3b>(l,k) = cv::Vec3b(255,255,255); }
+							else { i_want_to_see.at<cv::Vec3b>(l,k) = cv::Vec3b(128,128,128); }
 						}
 					}
+				}
 
-				i_want_to_see.at<cv::Vec3b>(nano_origin_y,nano_origin_x) = cv::Vec3b(0, 0, 255);
+				if ( limit_sec.count() > 2.0 )
+				{
+					time_start = std::chrono::system_clock::now();
+					limit_sec = std::chrono::system_clock::now() - time_start;
+
+
+					if ( old_x == 0 && old_y == 0 )
+					{
+						old_x = new_x;
+						old_y = new_y;
+					}
+
+					cv::line(i_want_to_see, cv::Point( old_x, old_y ), cv::Point( new_x, new_y ), cv::Scalar(0,0,255), 2);
+
+					old_x = new_x;
+					old_y = new_y;
+				}
+				else
+				{
+					limit_sec = std::chrono::system_clock::now() - time_start;
+				}
 
 				cv::imshow("i_want_to_see", i_want_to_see);
 				cv::waitKey(100);
+				///////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-				std::ifstream map_move_done(file_path);
+				//////////////////////////////////////////////////////////////
+				std::ifstream map_move_done(done_file_path);
 				std::string map_done_flag;
+
 				if( map_move_done.is_open() )
 				{
 					map_move_done >> map_done_flag;
 					int done_value = atoi(map_done_flag.c_str());
 					map_move_done.close();
 
-					if ( done_value )
+					if ( !done_value )
 					{
 						std::cout << "map move done" << std::endl;
 
-						std::ofstream next_search_ready(file_path);
-						next_search_ready << 0 << std::endl;
+						std::ofstream next_search_ready(done_file_path);
+						next_search_ready << 1 << std::endl;
 						next_search_ready.close();
+						get_mat_flag = true;
 						break;
 					}
 				}
+
+				std::ifstream mode_check(mode_file_path);
+				std::string mode_value_string;
+
+				if( mode_check.is_open() )
+				{
+					mode_check >> mode_value_string;
+					int mode_value = atoi(mode_value_string.c_str());
+					mode_check.close();
+
+					if ( mode_value == 300 )
+					{
+						std::cout << "mode change" << std::endl;
+						break;
+					}
+				}
+
+
+				//////////////////////////////////////////////////////////////
+
 			}
 			catch(tf2::LookupException& e)
 			{
+				time_start = std::chrono::system_clock::now();
+				limit_sec = std::chrono::system_clock::now() - time_start;
 				printf("can't find location\n");
 			}
 		}
