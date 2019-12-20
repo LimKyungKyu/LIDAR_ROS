@@ -81,51 +81,49 @@ lidar.launch 를 아래처럼 수정한다.
 // 청소를 위한 map 만들기 //
 cd && cd project_black/src/project_ros_cpp/src && vi clean_map.cpp
 ############################################################################################################################
-#include <ros/ros.h>
-#include <nav_msgs/MapMetaData.h>
-#include <nav_msgs/OccupancyGrid.h>
-#include "std_msgs/Header.h"
-#include "nav_msgs/MapMetaData.h"
-#include <vector>
-#include <iostream>
-#include <opencv2/opencv.hpp>
-#include <chrono>
 #include <cstdio>
-#include "tf/transform_listener.h"
-#include "project_ros_cpp/nano_control.h"
+#include <chrono>
+#include <iostream>
+#include <vector>
 
+#include <opencv2/opencv.hpp>
 #include "opencv2/core/core.hpp"
-#include "opencv2/highgui/highgui.hpp"
 #include <opencv2/imgproc/imgproc.hpp>
+#include "opencv2/highgui/highgui.hpp"
 
-#define _USE_MATH_DEFINES
+#include "tf/transform_listener.h"
 
-#define map_square_padding 10
-#define wall_padding 10
-#define search_done_area 6
-
-#include "pathFinder.h" // pathFinder 헤더 추가 
+#include <ros/ros.h>
 
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/MultiArrayDimension.h"
 #include "std_msgs/Int32MultiArray.h"
 #include "std_msgs/Int32.h"
+#include <std_msgs/Header.h>
+#include <nav_msgs/MapMetaData.h>
+#include <nav_msgs/OccupancyGrid.h>
+#include "project_ros_cpp/nano_control.h"
 
-std_msgs::Int32MultiArray clean_point;
+#include "pathFinder.h" // pathFinder 헤더 추가 
+
+///////////////////////////////////////////
+// user define //
+#define _USE_MATH_DEFINES
+
+#define map_square_padding 10
+#define wall_padding 10
+#define move_fill_area 6
+///////////////////////////////////////////
+
+
 cv::Mat i_want_to_see;
-
-std::chrono::system_clock::time_point time_start;
-std::chrono::duration<double> limit_sec;
+std_msgs::Int32MultiArray clean_point;
 
 int map_origin_x = 0, map_origin_y = 0;
 
-int map_load_flag_value = 0;
-
-bool get_mat_flag = true;
-
-std::string mode_file_path("/home/nvidia/mode");
-std::string map_load_flag_path("/home/nvidia/map_load_flag");
-std::string map_move_done_flag_path("/home/nvidia/map_move_flag");
+std::string file_path_mode("/home/nvidia/mode");
+std::string file_path_map_load("/home/nvidia/map_load_flag");
+std::string file_path_map_move("/home/nvidia/map_move_flag");
 
 int add_padding(cv::Mat resizing_mat)
 {
@@ -141,21 +139,193 @@ int add_padding(cv::Mat resizing_mat)
 
 void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 {
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// 3. mat을 불러올지, 새로 그릴지 판단한다. //
+	// 1이면 불러오고 0이면 새로 그린다.//
+	std::ifstream file_map_load(file_path_map_load);
+	std::string temp_string;
+	int map_load_flag = 0;
+
+	while (ros::ok() )
+	{
+		if( file_map_load.is_open() )
+		{
+			file_map_load >> temp_string;
+			map_load_flag = atoi(temp_string.c_str());
+			file_map_load.close();
+			break;
+		}
+	}
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+	if ( map_load_flag )
+	{
+		std::cout << "map load" << std::endl;
+	}
+	else
+	{
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 4. 맵데이터 세팅 //
+		std_msgs::Header header = msg->header;
+		nav_msgs::MapMetaData info = msg->info;
+
+		// rviz의 좌측 하단이 (0,0)이다. //
+		ROS_INFO("Got map %d %d", info.width, info.height);
+		ROS_INFO("Map Origin x %f", info.origin.position.x);
+		ROS_INFO("Map Origin y %f", info.origin.position.y);
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 5. 맵의 metadata 데이터 획득 //
+		std::vector<signed char> data = msg->data;
+		// rows,cols으로 변환 //
+		cv::Mat meta_data_resize = cv::Mat(data).reshape(1,info.height);
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 6. opencv에서 활용가능한 데이터로 변환 //
+		cv::Mat meta_to_opencv;
+		meta_data_resize.convertTo(meta_to_opencv,CV_8UC1);
+		// 정사각형으로 변환 하기 위한 rows,cols획득//
+		int resize_square_value = add_padding(meta_to_opencv);
+		// 원본 맵을 정사각형으로 만들고 상하좌우 10px씩 추가한다. //
+		cv::Mat original(resize_square_value, resize_square_value, CV_8UC1, cv::Scalar(0));
+		for (int i=0; i<meta_to_opencv.rows; i++) // 행
+			for (int j=0; j<meta_to_opencv.cols; j++) // 열
+				original.at<unsigned char>(i+map_square_padding,j+map_square_padding) = meta_to_opencv.at<unsigned char>(i,j);
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 7. 벽에 대한 데이터를 상하좌우 5px씩 확장 //
+		cv::Mat wall_padding_mat(original.size(),original.type(),cv::Scalar(0));
+		for (int i=0; i<original.rows; i++) // 행
+			for (int j=0; j<original.cols; j++) // 열
+				if ( int(original.at<unsigned char>(i,j)) > 80 )
+					for ( int k=(-wall_padding/2); k<=(wall_padding/2); k++ )
+						for ( int l=(-wall_padding/2); l<=(wall_padding/2); l++ )
+						{
+							//std::cout << "here 2" << std::endl;
+							if ( (i+k)<0 || (i+k)>=original.rows || (j+l)<0 || (j+l)>=original.cols ) {}
+							else { wall_padding_mat.at<unsigned char>((i+k),(j+l))=255; }
+						}
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 8. 외부는 하얀색 내부는 검은색으로 만들기 위하여 최외곽 경계를 찾아낸다. //
+		cv::Mat canny_temp;
+		cv::Canny(wall_padding_mat, canny_temp, 100, 100*3, 3);
+		std::vector<std::vector<cv::Point>> contours;
+		std::vector<cv::Vec4i> hierarchy;
+		cv::findContours(canny_temp, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
+
+		/*
+		cv::Mat show_contour;
+		cv::cvtColor(wall_padding_mat, show_contour, cv::COLOR_GRAY2BGR);
+		for ( int i=0; i<int(contours.size()); i++)
+		{
+			cv::drawContours(show_contour, contours, i, cv::Scalar(255,0,0),2,8,hierarchy,0,cv::Point());
+		}
+		cv::imshow("show_contour", show_contour);
+		//std::cout << contours[0] << std::endl;
+		//std::cout << contours[0][0] << std::endl;
+		//std::cout << contours[0][0].x << std::endl;
+		//std::cout << contours[0][0].y << std::endl;
+		//std::cout << int(contours.size()) << std::endl;
+		//std::cout << int(contours[0].size()) << std::endl;
+		*/
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 9. 최외곽으로부터 내부를 검은색으로 만든다. //
+		cv::Mat back_ground_white(wall_padding_mat.size(), wall_padding_mat.type(), cv::Scalar(255));
+		cv::fillPoly(back_ground_white, contours, cv::Scalar(0));
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 10. 기존 매트릭스와 합친다. //
+		wall_padding_mat = wall_padding_mat + back_ground_white;
+		// 경계부분도 채워야 하므로 그려준다. //
+		for ( int i=0; i<int(contours.size()); i++)
+		{
+			cv::drawContours(wall_padding_mat, contours, i, cv::Scalar(255),2,8,hierarchy,0,cv::Point());
+		}
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 11. metadata의 값은 y가 반전되어 있으므로 Mat을 x축에 대하여 회전시킨다.
+		cv::flip(wall_padding_mat, wall_padding_mat, 0);
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 12. metadata에서 넘어오는 정보는 m단위이므로 100을 곱하고
+		// 2cm당 1px 이므로 2로 나눠준다.
+		// 패딩한만큼 위치를 옮겨준다.
+		// map(0,0)를 Mat(i,j)로 표현한다. //
+		map_origin_x = (-info.origin.position.x*100.0/2.0) + map_square_padding ;
+		map_origin_y = wall_padding_mat.rows - (-info.origin.position.y*100.0/2.0+map_square_padding) ;
+		std::cout << "map x(i) : " << map_origin_x << std::endl;
+		std::cout << "map y(j) : " << map_origin_y << std::endl;
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// 13. 색상 표현을 위해 3채널 Mat을 만든다. //
+
+		/*
+		// try 1 : 실패 //
+		cv::Mat in[] = {wall_padding_mat, wall_padding_mat, wall_padding_mat};
+		merge(in, 3, color_map);
+		i_want_to_see = color_map.clone();
+		*/
+
+		/*
+		// try 2 : 실패 //
+		wall_padding_mat.convertTo(color_map,CV_8UC3);
+		i_want_to_see = color_map.clone();
+		*/
+
+		// try 3 : 성공 //
+		cv::Mat color_map(wall_padding_mat.rows, wall_padding_mat.cols, CV_8UC3, cv::Scalar(0));
+		int color_value = 0;
+		for (int i=0; i<wall_padding_mat.rows; i++) // 행
+			for (int j=0; j<wall_padding_mat.cols; j++) // 열
+				{
+					color_value = wall_padding_mat.at<unsigned char>(i,j);
+					color_map.at<cv::Vec3b>(i,j) = cv::Vec3b(color_value,color_value,color_value);
+				}
+
+		// 다음 진행부터 맵을 새로 그리지 않도록 세팅한다. //
+		/////////////////////////////////////////////////
+		// map load setting //
+		// 앞으로 맵을 로드하도록 만든다. //
+		std::ofstream file_map_init(file_path_map_load);
+		while ( ros::ok() )
+		{
+			if( file_map_init.is_open() )
+			{
+				file_map_init << 1 << std::endl;
+				file_map_init.close();
+				break;
+			}
+		}
+		/////////////////////////////////////////////////
+
+		i_want_to_see = color_map.clone();
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 3. 맵데이터 세팅 //
-	std_msgs::Header header = msg->header;
-	nav_msgs::MapMetaData info = msg->info;
-
-	// rviz의 좌측 하단이 (0,0)이다. //
-	ROS_INFO("Got map %d %d", info.width, info.height);
-	ROS_INFO("Map Origin x %f", info.origin.position.x);
-	ROS_INFO("Map Origin y %f", info.origin.position.y);
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 4. google cartographer tf setting //
+	// 14. google cartographer tf setting //
 	tf::TransformListener tfl;
 	tf::StampedTransform my_test_transform;
 
@@ -163,247 +333,72 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 	std::string move = std::string("/base_footprint");
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 5. 맵의 metadata 데이터 획득 //
-	std::vector<signed char> data = msg->data;
-	// rows,cols으로 변환 //
-	cv::Mat meta_data_resize = cv::Mat(data).reshape(1,info.height);
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 6. opencv에서 활용가능한 데이터로 변환 //
-	cv::Mat meta_to_opencv;
-	meta_data_resize.convertTo(meta_to_opencv,CV_8UC1);
-	// 정사각형으로 변환 하기 위한 rows,cols획득//
-	int resize_square_value = add_padding(meta_to_opencv);
-	// 원본 맵을 정사각형으로 만들고 상하좌우 10px씩 추가한다. //
-	cv::Mat original(resize_square_value, resize_square_value, CV_8UC1, cv::Scalar(0));
-	for (int i=0; i<meta_to_opencv.rows; i++) // 행
-		for (int j=0; j<meta_to_opencv.cols; j++) // 열
-			original.at<unsigned char>(i+map_square_padding,j+map_square_padding) = meta_to_opencv.at<unsigned char>(i,j);
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 7. 벽에 대한 데이터를 상하좌우 5px씩 확장 //
-	cv::Mat wall_padding_mat(original.size(),original.type(),cv::Scalar(0));
-	for (int i=0; i<original.rows; i++) // 행
-		for (int j=0; j<original.cols; j++) // 열
-			if ( int(original.at<unsigned char>(i,j)) > 80 )
-				for ( int k=(-wall_padding/2); k<=(wall_padding/2); k++ )
-					for ( int l=(-wall_padding/2); l<=(wall_padding/2); l++ )
-					{
-						//std::cout << "here 2" << std::endl;
-						if ( (i+k)<0 || (i+k)>=original.rows || (j+l)<0 || (j+l)>=original.cols ) {}
-						else { wall_padding_mat.at<unsigned char>((i+k),(j+l))=255; }
-					}
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 8. 외부는 하얀색 내부는 검은색으로 만들기 위하여 최외곽 경계를 찾아낸다. //
-	cv::Mat canny_temp;
-	cv::Canny(wall_padding_mat, canny_temp, 100, 100*3, 3);
-	std::vector<std::vector<cv::Point>> contours;
-	std::vector<cv::Vec4i> hierarchy;
-	cv::findContours(canny_temp, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
-
-	/*
-	cv::Mat show_contour;
-	cv::cvtColor(wall_padding_mat, show_contour, cv::COLOR_GRAY2BGR);
-	for ( int i=0; i<int(contours.size()); i++)
+	while ( ros::ok() )
 	{
-		cv::drawContours(show_contour, contours, i, cv::Scalar(255,0,0),2,8,hierarchy,0,cv::Point());
-	}
-	cv::imshow("show_contour", show_contour);
-	//std::cout << contours[0] << std::endl;
-	//std::cout << contours[0][0] << std::endl;
-	//std::cout << contours[0][0].x << std::endl;
-	//std::cout << contours[0][0].y << std::endl;
-	//std::cout << int(contours.size()) << std::endl;
-	//std::cout << int(contours[0].size()) << std::endl;
-	*/
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 9. 최외곽으로부터 내부를 검은색으로 만든다. //
-	cv::Mat back_ground_white(wall_padding_mat.size(), wall_padding_mat.type(), cv::Scalar(255));
-	cv::fillPoly(back_ground_white, contours, cv::Scalar(0));
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 10. 기존 매트릭스와 합친다. //
-	wall_padding_mat = wall_padding_mat + back_ground_white;
-	// 경계부분도 채워야 하므로 그려준다. //
-	for ( int i=0; i<int(contours.size()); i++)
-	{
-		cv::drawContours(wall_padding_mat, contours, i, cv::Scalar(255),2,8,hierarchy,0,cv::Point());
-	}
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 11. metadata의 값은 y가 반전되어 있으므로 Mat을 x축에 대하여 회전시킨다.
-	cv::flip(wall_padding_mat, wall_padding_mat, 0);
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 12. metadata에서 넘어오는 정보는 m단위이므로 100을 곱하고
-	// 2cm당 1px 이므로 2로 나눠준다.
-	// 패딩한만큼 위치를 옮겨준다.
-	// map(0,0)를 Mat(i,j)로 표현한다. //
-	map_origin_x = (-info.origin.position.x*100.0/2.0) + map_square_padding ;
-	map_origin_y = wall_padding_mat.rows - (-info.origin.position.y*100.0/2.0+map_square_padding) ;
-	std::cout << "map x(i) : " << map_origin_x << std::endl;
-	std::cout << "map y(j) : " << map_origin_y << std::endl;
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 13. 색상 표현을 위해 3채널 Mat을 만든다. //
-
-	/*
-	// try 1 : 실패 //
-	cv::Mat in[] = {wall_padding_mat, wall_padding_mat, wall_padding_mat};
-	merge(in, 3, color_map);
-	i_want_to_see = color_map.clone();
-	*/
-
-	/*
-	// try 2 : 실패 //
-	wall_padding_mat.convertTo(color_map,CV_8UC3);
-	i_want_to_see = color_map.clone();
-	*/
-
-	// try 3 : 성공 //
-	cv::Mat color_map(wall_padding_mat.rows, wall_padding_mat.cols, CV_8UC3, cv::Scalar(0));
-	int color_value = 0;
-	for (int i=0; i<wall_padding_mat.rows; i++) // 행
-		for (int j=0; j<wall_padding_mat.cols; j++) // 열
-			{
-				color_value = wall_padding_mat.at<unsigned char>(i,j);
-				color_map.at<cv::Vec3b>(i,j) = cv::Vec3b(color_value,color_value,color_value);
-			}
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// 14. mat을 불러올지 그릴지 판단한다. //
-	std::ifstream map_load_flag(map_load_flag_path);
-	std::string temp_1;
-	while (ros::ok() )
-	{
-		if( map_load_flag.is_open() )
+		try
 		{
-			map_load_flag >> temp_1;
-			map_load_flag_value = atoi(temp_1.c_str());
-			map_load_flag.close();
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			// 15. google cartographer에서 tf 데이터를 수신한다. //
+			tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
+			tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
+			tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-			// map_load_flag_value가 0 이면 새로 그리고 1 이면 저장된 Mat을 활용한다.
-			if ( map_load_flag_value )
+
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			// 16. nano위치를 Mat(i,j)로 표현한다. //
+			int nano_origin_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
+			int nano_origin_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
+			std::cout << "nano x(i) : " << nano_origin_x <<std::endl;
+			std::cout << "nano y(j) : " << nano_origin_y <<std::endl;
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			// 17. 경로 탐색 init //
+			PathFinder path;
+			// Mat에서 현재 nano의 위치(i,j) 설정 //
+			Position start(nano_origin_x,nano_origin_y);
+			// grid좌표를 담을 공간 선언 //
+			std::list<Position> pathList;
+			// grid 간격 선언 (px단위) //
+			//path.setMoveInterval(5); // default : 5px = 10cm
+
+			// grid 포인트 작성 //
+			pathList = path.findCoveragePath(start, i_want_to_see, 0); // 1 : 그림표시, 0 : 표시안함 //
+
+			clean_point.data.clear();
+			for (auto it = pathList.begin(); it != pathList.end(); ++it)
 			{
-				std::cout << "load mat data" std::endl;			
+				printf("[%d, %d]\n", (*it).x, (*it).y);
+				clean_point.data.push_back( (*it).x );
+				clean_point.data.push_back( (*it).y );
 			}
-			else
+			// map의 (0,0) 데이터 저장 //
+			clean_point.data.push_back(map_origin_x);
+			clean_point.data.push_back(map_origin_y);
+
+			/*
+			for ( int i=0; i< clean_point.data.size(); i+=2 )
 			{
-				std::cout << "new mat data" std::endl;	
-				i_want_to_see = color_map.clone();
-				while ( ros::ok() )
-				{
-					if( map_load_flag.is_open() )
-					{
-						map_load_flag << 1 << std::endl;
-						map_load_flag.close();
-						break;
-					}
-				}
-
-				break;
+				std::cout << "pub [" << clean_point.data[i] << ", "
+				<< clean_point.data[i+1] << "]" <<std::endl;
 			}
+			*/
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+			//cv::imshow("meta_data", meta_data_resize);
+			//cv::imshow("original", original);
+			//cv::imshow("back_ground_white", back_ground_white);
+			//cv::imshow("color_map", color_map);
+
+			break;
 		}
-	}
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-	try
-	{
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// 15. google cartographer에서 tf 데이터를 수신한다. //
-		tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
-		tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
-		tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// 16. nano위치를 Mat(i,j)로 표현한다. //
-		int nano_origin_x = map_origin_x + Coordinate_3D.getX()*100.0/2.0;
-		int nano_origin_y = map_origin_y - Coordinate_3D.getY()*100.0/2.0;
-		std::cout << "nano x(i) : " << nano_origin_x <<std::endl;
-		std::cout << "nano y(j) : " << nano_origin_y <<std::endl;
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// 17. 위치표시 //
-		// map(0,0)을 표시한다. // 
-		//cv::circle( color_map, cv::Point(map_origin_x, map_origin_y), 2, cv::Scalar(0,255,0), -1);
-		// nano위치를 표시한다. //
-		//cv::circle( color_map, cv::Point(nano_origin_x, nano_origin_y), 2, cv::Scalar(255,0,0), -1);
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-		//cv::imshow("meta_data", meta_data_resize);
-		//cv::imshow("original", original);
-		//cv::imshow("back_ground_white", back_ground_white);
-		//cv::imshow("color_map", color_map);
-
-
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// 18. 경로 탐색 init //
-		PathFinder path;
-		// Mat에서 현재 nano의 위치(i,j) 설정 //
-		Position start(nano_origin_x,nano_origin_y);
-		// grid좌표를 담을 공간 선언 //
-		std::list<Position> pathList;
-		// grid 간격 선언 (px단위) //
-		//path.setMoveInterval(5); // default : 5px = 10cm
-		// grid 포인트 작성 //
-		pathList = path.findCoveragePath(start, i_want_to_see, 0); // 1: 실시간 이미지 보여주기, 실제 사용시 0 으로 수정 (이미지 안보여주기) //
-		clean_point.data.clear();
-		for (auto it = pathList.begin(); it != pathList.end(); ++it)
+		catch(tf2::LookupException& e)
 		{
-			printf("[%d, %d]\n", (*it).x, (*it).y);
-			clean_point.data.push_back( (*it).x );
-			clean_point.data.push_back( (*it).y );
+			printf("get grid point fail\n");
+			return;
 		}
-		// map의 (0,0) 데이터 저장 //
-		clean_point.data.push_back(map_origin_x);
-		clean_point.data.push_back(map_origin_y);
-
-		/*
-		for ( int i=0; i< clean_point.data.size(); i+=2 )
-		{
-			std::cout << "pub [" << clean_point.data[i] << ", "
-			<< clean_point.data[i+1] << "]" <<std::endl;
-		}
-		*/
-		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-	}
-	catch(tf2::LookupException& e)
-	{
-		printf("can't find location\n");
-		return;
 	}
 
 }
@@ -415,10 +410,7 @@ int main(int argc, char **argv)
 	// ROS init //
 	ros::init(argc, argv, "map_reader");
 	ros::NodeHandle n;
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// subscriber, publisher //
 	ros::Publisher point_pub = n.advertise<std_msgs::Int32MultiArray>("clean_point_topic", 1);
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -437,6 +429,22 @@ int main(int argc, char **argv)
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	int nano_old_x = 0, nano_old_y = 0, nano_new_x = 0, nano_new_y = 0;
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+	///////////////////////////////////////////////////////////////////////////////////////////////////
+	// map load setting //
+	// 1 : 맵을 로드한다, 0 : 새로 그린다. //
+	std::ofstream file_map_init(file_path_map_load);
+	while ( ros::ok() )
+	{
+		if( file_map_init.is_open() )
+		{
+			file_map_init << 0 << std::endl;
+			file_map_init.close();
+			break;
+		}
+	}
+	///////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 	while ( ros::ok() )
@@ -464,7 +472,7 @@ int main(int argc, char **argv)
 
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// 2_1. google cartographer에서 map 데이터를 수신한다.
-		// 2_2. mapCallback 함수를 호출한다. 여기선 새로운 맵을 사용할지 기존 맵을 사용할지 map_load_flag_value로 판단한다.
+		// 2_2. mapCallback 함수를 호출한다. 여기선 새로운 맵을 사용할지 기존 맵을 사용할지 map_load_flag로 판단한다.
 		while ( ros::ok() )
 		{
 			nav_msgs::OccupancyGrid::ConstPtr grid = ros::topic::waitForMessage<nav_msgs::OccupancyGrid>("/map",n,ros::Duration(1.0));
@@ -482,28 +490,106 @@ int main(int argc, char **argv)
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-
-
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// 19. 드로잉 영역 init //
+		// 18. 드로잉 영역 시작 //
+
+		std::chrono::system_clock::time_point time_start;
+		std::chrono::duration<double> limit_sec;
+
+		time_start = std::chrono::system_clock::now();
+		limit_sec = std::chrono::system_clock::now() - time_start;
+
 		nano_old_x = 0;
 		nano_old_y = 0;
 		nano_new_x = 0;
 		nano_new_y = 0;
-
-		time_start = std::chrono::system_clock::now();
-		limit_sec = std::chrono::system_clock::now() - time_start;
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 		while ( ros::ok() )
 		{
-
-
 			try
 			{
 				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				// 20. Mat에서 현재 nano의 위치(i,j) 기록 //
+				// 23. map의 모든 포인트를 돌았는지 확인한다. //
+				// 모든 포인트를 돌았으면 //
+				// 맵을 새로그릴 준비를 하고 //
+				// 드로잉 영역을 벗어나고 //
+				// rotation_and_move.cpp 에서 보내는 100 메세지를 기다린다. //
+				std::ifstream file_map_move(file_path_map_move);
+				std::string temp_file_map_move;
+				int map_move_flag = 0;
+
+				while ( ros::ok() )
+				{
+					if( file_map_move.is_open() )
+					{
+						file_map_move >> temp_file_map_move;
+						map_move_flag = atoi(temp_file_map_move.c_str());
+						file_map_move.close();
+					}
+				}
+
+				if ( map_move_flag )
+				{
+					std::cout << "not yet done, map move" << std::endl;
+				}
+				else
+				{
+					/////////////////////////////////////////////////////////
+					std::cout << "map move done" << std::endl;
+					// map load setting //
+					// 1 : 맵을 로드한다, 0 : 새로 그린다. //
+					std::ofstream file_map_init(file_path_map_load);
+					while ( ros::ok() )
+					{
+						if( file_map_init.is_open() )
+						{
+							file_map_init << 0 << std::endl;
+							file_map_init.close();
+							break;
+						}
+					}
+					break;
+					/////////////////////////////////////////////////////////
+				}
+				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				// 24. 모드를 확인한다. //
+				// 모드가 변경경되었으면 //
+				// 드로잉 영역을 벗어나고 //
+				// rotation_and_move.cpp 에서 보내는 100 메세지를 기다린다. //
+
+				std::ifstream file_mode(file_path_mode);
+				std::string temp_file_mode;
+				int mode_value = 0;
+				while ( ros::ok() )
+				{
+					if( file_mode.is_open() )
+					{
+						file_mode >> temp_file_mode;
+						mode_value = atoi(temp_file_mode.c_str());
+						file_mode.close();
+					}
+				}
+
+				if ( mode_value == 300 || mode_value == 310 )
+				{
+					std::cout << "mode is : " << mode_value << std::endl;
+					std::cout << "mode change" << std::endl;
+					break;
+				}
+				else if ( mode_value == 990 )
+				{
+					std::cout << "초기화" << std::endl;
+				}
+				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				// 19. Mat에서 nano의 현재위치(i,j) 기록 //
 				tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
 				tfl.lookupTransform(start, move, ros::Time(), my_test_transform);
 				tf::Vector3 Coordinate_3D = my_test_transform.getOrigin();
@@ -513,33 +599,31 @@ int main(int argc, char **argv)
 
 
 				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				// 21. 내 위치를 중심으로 7x7 채우기
+				// 20. nano의 현재위치를 중심으로 7x7 채우기
 				// 7x7 = 중심으로부터 위로 3칸, 아래로 3칸
-				// search_done_area = 6 입력하면 된다.
+				// move_fill_area = 6 입력하면 된다.
 				// cols = 열 = x, rows = 행 = y
 				// 검은색(0,0,0)일때만 색칠한다. 
-				for ( int k = (nano_new_x-search_done_area/2); k <= (nano_new_x+search_done_area/2); k++ ) // 열 = x
+				for ( int k = (nano_new_x-move_fill_area/2); k <= (nano_new_x+move_fill_area/2); k++ ) // 열 = x
 				{
-					for ( int l = (nano_new_y-search_done_area/2); l <= (nano_new_y+search_done_area/2); l++ ) // 행 = y
+					for ( int l = (nano_new_y-move_fill_area/2); l <= (nano_new_y+move_fill_area/2); l++ ) // 행 = y
 					{
 						if ( k<0 || k>=i_want_to_see.rows || l<0 || l>=i_want_to_see.cols ) {}
 						else
 						{
-							if (i_want_to_see.at<cv::Vec3b>(l,k) != cv::Vec3b(0, 0, 0)) {}
-							else { i_want_to_see.at<cv::Vec3b>(l,k) = cv::Vec3b(128,128,128); }
+							if (i_want_to_see.at<cv::Vec3b>(k,l) != cv::Vec3b(0, 0, 0)) {}
+							else { i_want_to_see.at<cv::Vec3b>(k,l) = cv::Vec3b(128,128,128); }
 						}
 					}
 				}
 				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+
 				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				// 22. 2초 대기한다 //
+				// 21. 2초 마다 라인을 그린다. //
 				if ( limit_sec.count() > 2.0 )
 				{
-					time_start = std::chrono::system_clock::now();
-					limit_sec = std::chrono::system_clock::now() - time_start;
-
 					if ( old_x == 0 && old_y == 0 )
 					{
 						nano_old_x = nano_new_x;
@@ -550,6 +634,9 @@ int main(int argc, char **argv)
 
 					nano_old_x = nano_new_x;
 					nano_old_y = nano_new_y;
+
+					time_start = std::chrono::system_clock::now();
+					limit_sec = std::chrono::system_clock::now() - time_start;
 				}
 				else
 				{
@@ -558,62 +645,8 @@ int main(int argc, char **argv)
 				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-
 				cv::imshow("i_want_to_see", i_want_to_see);
 				cv::waitKey(100);
-
-
-
-
-
-				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				// 23. nano 모든 포인트를 돌았는지 확인한다. //
-				std::ifstream map_move_done(map_move_done_flag_path);
-				std::string map_done_flag;
-
-				if( map_move_done.is_open() )
-				{
-					map_move_done >> map_done_flag;
-					int done_value = atoi(map_done_flag.c_str());
-					map_move_done.close();
-
-					if ( !done_value )
-					{
-						std::cout << "map move done" << std::endl;
-
-						std::ofstream next_search_ready(map_move_done_flag_path);
-						next_search_ready << 1 << std::endl;
-						next_search_ready.close();
-						break;
-					}
-				}
-				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				// 24. 모드를 확인한다. //
-				std::ifstream mode_check(mode_file_path);
-				std::string mode_value_string;
-
-				if( mode_check.is_open() )
-				{
-					mode_check >> mode_value_string;
-					int mode_value = atoi(mode_value_string.c_str());
-					mode_check.close();
-
-					if ( mode_value == 300 || mode_value == 310 )
-					{
-						std::cout << "mode change" << std::endl;
-						break;
-					}
-					
-					if ( mode_value == 999 )
-					{
-						std::cout << "맵 초기화" << std::endl;
-					}
-				}
-				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 			}
 			catch(tf2::LookupException& e)
@@ -679,4 +712,3 @@ include_directories(
 
 */
 ############################################################################################################################
-

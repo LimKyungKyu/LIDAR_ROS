@@ -451,12 +451,14 @@ sys.path.append("/home/jetbot/project_black/src/project_ros_python/include")
 ############################################################################################################################
 cd && cd project_black/src/project_ros_cpp/src && vi rotaion_and_move.cpp
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#include <unistd.h>
+#include <fstream>
+#include <iostream>
+#include <chrono>
+
 #include <ros/ros.h>
 
 #include "std_msgs/Int32.h"
-
-#include "tf/transform_listener.h"
-
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/MultiArrayDimension.h"
 #include "std_msgs/Int32MultiArray.h"
@@ -466,17 +468,16 @@ cd && cd project_black/src/project_ros_cpp/src && vi rotaion_and_move.cpp
 #include "project_ros_cpp/step_one_flag.h"
 #include "project_ros_cpp/clean_point.h"
 
-#include <unistd.h>
-#include <fstream>
-#include <iostream>
-#include <chrono>
+#include "tf/transform_listener.h"
 
 
-// mode flag //
-bool other_mode_flag = true;
 
-// move ready //
+// ros msg define //
+project_ros_cpp::nano_control step_one_order;
+project_ros_cpp::nano_control step_two_order;
+std_msgs::Int32MultiArray point_data;
 std_msgs::Int32 move_ready_flag;
+
 
 // find_direction //
 double target_x = 0.0, target_y = 0.0;
@@ -489,39 +490,38 @@ bool make_target_yaw_flag = true;
 double get_mpu_yaw = 0.0;
 double destination_yaw = 0.0;
 double target_yaw = 0.0;
-int check_angle_count = 0;
 
 // step_two_func //
 bool step_two_rotation_flag = true;
-bool range_flag = true;
-bool range_out_flag = true;
-double range_out_check = 0.0;
-double find_center_yaw =0.0;
 bool shutdown_flag = true;
 
+#define grid_interval_pixel 4 // 픽셀 단위 //
+#define grid_interval_cm 4 // cm 단위 //
+#define degree_range 10 // 각도 범위 // 
 
-// 픽셀 단위 //
-#define grid_interval_pixel 4
-// cm 단위 //
-#define grid_interval_cm 4
-// 각도 범위 // 
-#define degree_range 10
-
-project_ros_cpp::nano_control step_one_order;
-project_ros_cpp::nano_control step_two_order;
-project_ros_cpp::step_one_flag step_one_done_flag;
-
-std_msgs::Int32MultiArray point_data;
+// Flags //
+std::string file_path_mode("/home/nvidia/mode");
+std::string file_path_pause("/home/nvidia/mode110");
+std::string file_path_map_move("/home/nvidia/map_move_flag");
 
 std::chrono::system_clock::time_point time_start;
 std::chrono::duration<double> limit_sec;
 
 
-std::string mode_check_file_path("/home/nvidia/mode.txt");
-std::string map_load_flag_path("/home/nvidia/map_load_flag");
-std::string map_move_done_flag_path("/home/nvidia/map_move_flag");
-std::string pause_110("/home/nvidia/mode110.txt");
+double in_180_func(double original_degree)
+{
 
+	if ( original_degree < -180.0 )
+	{
+		original_degree = original_degree + 360.0;
+	}
+	else if ( original_degree > 180.0 )
+	{
+		original_degree = original_degree - 360.0;
+	}
+
+	return original_degree;'
+}
 
 void find_direction(int point_data_set[][2])
 {
@@ -559,7 +559,6 @@ void find_direction(int point_data_set[][2])
 		
 		try
 		{
-
 			///////////////////////////////////////////////////////////////////////////////
 			// 10. 나노의 현재위치 (i,j) 를 계산한다. //
 			tfl.waitForTransform(start, move, ros::Time(), ros::Duration(1.0));
@@ -611,14 +610,7 @@ void find_direction(int point_data_set[][2])
 			// 14. 현재 yaw에서 회전할 yaw를 구한다.
 			// 180도 이상의 회전을 방지하기 위해 아래와 같이 정의한다.
 			destination_yaw = nano_zero_yaw + zero_to_target;
-			if ( destination_yaw < -180.0 )
-			{
-				destination_yaw = destination_yaw + 360.0;
-			}
-			else if ( destination_yaw > 180.0 )
-			{
-				destination_yaw = destination_yaw - 360.0;
-			}
+			destination_yaw = in_180_func(destination_yaw);
 			//std::cout << "destination_yaw : " << destination_yaw << std::endl;
 			///////////////////////////////////////////////////////////////////////////////
 		}
@@ -669,26 +661,9 @@ void step_one_func(const project_ros_cpp::get_degree::ConstPtr& data)
 		// 현재 mpu_6050의 yaw값을 기준으로 총 회전해야될 각도를 계산한다. //
 		if ( make_target_yaw_flag )
 		{
-			if ( get_mpu_yaw > 180.0 )
-			{
-				get_mpu_yaw = get_mpu_yaw - 360.0;
-			}
-			else if ( get_mpu_yaw < -180.0 )
-			{
-				get_mpu_yaw = get_mpu_yaw + 360.0;
-			}
-			
+			get_mpu_yaw = in_180_func(get_mpu_yaw);	
 			target_yaw = destination_yaw + get_mpu_yaw;
-
-			if ( target_yaw > 180.0 )
-			{
-				target_yaw = target_yaw - 360.0;
-			}
-			else if ( target_yaw < -180.0 )
-			{
-				target_yaw = target_yaw + 360.0;
-			}
-			
+			target_yaw = in_180_func(target_yaw);
 			make_target_yaw_flag = false;
 		}
 		///////////////////////////////////////////////////////////////////////////
@@ -698,15 +673,7 @@ void step_one_func(const project_ros_cpp::get_degree::ConstPtr& data)
 		// 21_1. 현재 mpu_6050의 yaw값과 target_yaw의 차이를 구한다. //
 		// gap이 degree_range 이하가 될때까지 반복한다. //
 		double gap = target_yaw - get_mpu_yaw;
-
-		if ( gap < -180.0 )
-		{
-			gap = gap + 360.0;
-		}
-		else if ( gap > 180.0 )	
-		{
-			gap = gap - 360.0;
-		}
+		gap = in_180_func(gap);
 
 		if ( (gap<degree_range) && (gap>-degree_range) )
 		{
@@ -731,8 +698,6 @@ void step_one_func(const project_ros_cpp::get_degree::ConstPtr& data)
 	}
 }
 
-
-
 void get_grid_point(const std_msgs::Int32MultiArray::ConstPtr& msg)
 {
 	
@@ -742,31 +707,20 @@ void get_grid_point(const std_msgs::Int32MultiArray::ConstPtr& msg)
 	}
 }
 
-
-
-
-
-
-
-
 int main(int argc, char **argv)
 {
 
 	///////////////////////////////////////////////////////////////////////////////////////////////////
 	// ROS init //
-	ros::init(argc, argv, "find_yaw");
+	ros::init(argc, argv, "rotation_move_node");
 	ros::NodeHandle nh;
-	///////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-	///////////////////////////////////////////////////////////////////////////////////////////////////
 	// subscriber, publisher //
 	ros::Subscriber step_one = nh.subscribe("mpu_6050_degree", 1, step_one_func);
 
 	ros::Publisher move_ready = nh.advertise<std_msgs::Int32>("move_ready_topic", 1);
-	ros::Publisher move_pub_one = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
-	ros::Publisher move_pub_two = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
-	ros::Publisher step_one_done = nh.advertise<project_ros_cpp::step_one_flag>("step_one_topic", 1);
+	ros::Publisher step_one_pub = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
+	ros::Publisher step_two_pub = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
 	///////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -781,48 +735,30 @@ int main(int argc, char **argv)
 
 
 	///////////////////////////////////////////////////////////////////////////////////////////////////
-	// map load setting //
-	// 처음 값을 0으로 기록하여 맵을 그리도록 한다. //
-	std::ofstream map_init_func(map_load_flag_path);
-	while ( ros::ok() )
-	{
-		if( map_init_func.is_open() )
-		{
-			map_init_func << 0 << std::endl;
-			map_init_func.close();
-			break;
-		}
-	}
-	///////////////////////////////////////////////////////////////////////////////////////////////////
-
-	///////////////////////////////////////////////////////////////////////////////////////////////////
 	// map move setting //
-	// 처음 값을 1로 기록하여 진행중임을 알린다. //
-	std::ofstream map_move_func(map_move_done_flag_path);
+	// 1 : 진행중, 0 : grid point 순회 완료 //
+	std::ofstream file_map_move(file_path_map_move);
 	while ( ros::ok() )
 	{
-		if( map_init_func.is_open() )
+		if( file_map_move.is_open() )
 		{
-			map_move_func << 1 << std::endl;
-			map_move_func.close();
+			file_map_move << 1 << std::endl;
+			file_map_move.close();
 			break;
 		}
 	}
 	///////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-	///////////////////////////////////////////////////////////////////////////////////////////////////
-	double distance = 0.0;
 	int mode_value = 0;
-	///////////////////////////////////////////////////////////////////////////////////////////////////
-
 	while ( ros::ok() )
 	{
 		std::cout << "mode check" << std::endl;
-
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// 1. control tower에서 보내는 mode를 수신한다. //
-		// 참고 : control tower에서는  일반모드를 누른 순간 100이라는 메세지를 발송하고 이후엔 0을 반복적으로 발송한다. //
+		// 1. control_tower.cpp에서 보내는 mode를 수신한다. //
+		// 참고 : control_tower.cpp에서는 일반모드를 누른 순간 //
+		// /home/nvidia/mode.txt에 100을 기록하고, 100이라는 메세지를 발송하고 //
+		// /home/nvidia/mode.txt에 0을 다시 기록한다. //
 		std_msgs::Int32::ConstPtr control_mode = ros::topic::waitForMessage<std_msgs::Int32>("control_tower_topic",nh,ros::Duration(1.0));\
 		if (control_mode)
 		{
@@ -839,9 +775,10 @@ int main(int argc, char **argv)
 
 
 				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				// 3_1. grid 포인트를 받을때까지 clean_map.cpp에 int 100을 발송한다. //
-				// 3_2. clean_map.cpp는 100을 받으면 탈출한다. //
-				// 3_3. clean_map.cpp로부터 순회할 grid point 를 받는다.
+				// 3_1. grid 포인트를 받을때까지 clean_map.cpp에 100을 발송한다. //
+				// 3_2. clean_map.cpp는 100을 받으면 맵 그리기를 시작한다. //
+				// 3_3. 이때 clean_map.cpp는 /home/nvidia/map_load_flag를 읽고 새로 그릴지, 기존맵을 사용할지 판단한다. //
+				// 3_4. clean_map.cpp로부터 순회할 grid point 를 받는다.
 				// 3_3. get_grid_point 함수를 호출한다.
 				while ( ros::ok() )
 				{
@@ -858,7 +795,6 @@ int main(int argc, char **argv)
 				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 				
 
-
 				///////////////////////////////////////////////////////////////////////////////////
 				// 4. clean_map.cpp로부터 map(0,0)의 (i,j)를 추출한다.
 				map_origin_y = point_data.data.back();
@@ -867,7 +803,6 @@ int main(int argc, char **argv)
 				point_data.data.pop_back();
 				std::cout << "map (0,0) : " << map_origin_x << ", " << map_origin_y << std::endl;
 				///////////////////////////////////////////////////////////////////////////////////
-
 
 
 				///////////////////////////////////////////////////////////////////////////////////
@@ -884,15 +819,12 @@ int main(int argc, char **argv)
 				///////////////////////////////////////////////////////////////////////////////////
 
 
-
 				///////////////////////////////////
 				// 6. 방향 찾기 초기화 //
 				step_one_rotation_flag = true;
 				make_target_yaw_flag = true;
 
 				step_two_rotation_flag = true;
-				range_flag = true;
-				range_out_flag = true;
 
 				shutdown_flag = true;
 
@@ -902,7 +834,6 @@ int main(int argc, char **argv)
 
 				while ( ros::ok() )
 				{
-
 					///////////////////////////////////////////////////////////////////////////////////
 					// 15. step_two_rotation_flag를 확인한다. //
 					// 7_2번, 9_2번, 11번의 경우 step_two_rotation_flag = false이다. //
@@ -912,14 +843,13 @@ int main(int argc, char **argv)
 						// 16. step_one_rotation_flag를 확인한다. //
 						if ( step_one_rotation_flag )
 						{
-
 							///////////////////////////////////////////////////////////////////////////////////
 							// 17. 목표 지점 향하게 만들기 //
 							// spinOnce가 실행되면 step_one_func이 1번 실행된다. //
 							// 21_1번, 21_2로 결과를 반환한다. //
 							// 21_2번의 경우 step_one_rotation_flag = false이다. //
 							ros::spinOnce();
-							move_pub_one.publish(step_one_order);
+							step_one_pub.publish(step_one_order);
 							///////////////////////////////////////////////////////////////////////////////////
 
 
@@ -932,7 +862,7 @@ int main(int argc, char **argv)
 								limit_sec = std::chrono::system_clock::now() - time_start;
 							}
 							step_one_order.move_message = 5;
-							move_pub_one.publish(step_one_order);
+							step_one_pub.publish(step_one_order);
 							///////////////////////////////////////////////////////////////////////////////////
 						}
 						else
@@ -945,9 +875,8 @@ int main(int argc, char **argv)
 							int step_count = 0;
 							while ( step_count < 10)
 							{
-
 								step_two_order.move_message = 1;
-								move_pub_two.publish(step_two_order);
+								step_two_pub.publish(step_two_order);
 
 				    				time_start = std::chrono::system_clock::now();
 								limit_sec = std::chrono::system_clock::now() - time_start;
@@ -957,15 +886,14 @@ int main(int argc, char **argv)
 								}
 
 								step_two_order.move_message = 5;
-								move_pub_two.publish(step_two_order);
+								step_two_pub.publish(step_two_order);
 
 								++step_count;
 							}
 							///////////////////////////////////////////////////////////////////////////////////
 
-
 							step_two_order.move_message = 5;
-							move_pub_two.publish(step_two_order);
+							step_two_pub.publish(step_two_order);
 
 							///////////////////////////////////////////////////////////////////////////////////
 							// 24. 7_1번으로 돌아간다. //
@@ -975,8 +903,6 @@ int main(int argc, char **argv)
 							make_target_yaw_flag = true;
 
 							step_two_rotation_flag = true;
-							range_flag = true;
-							range_out_flag = true;
 
 							find_direction(point_data_set);
 							///////////////////////////////////////////////////////////////////////////////////
@@ -995,8 +921,6 @@ int main(int argc, char **argv)
 						make_target_yaw_flag = true;
 
 						step_two_rotation_flag = true;
-						range_flag = true;
-						range_out_flag = true;
 
 						find_direction(point_data_set);
 						///////////////////////////////////////////////////////////////////////////////////
@@ -1004,57 +928,86 @@ int main(int argc, char **argv)
 
 						///////////////////////////////////////////////////////////////////////////////////
 						// 26. 모드 확인 //
-						std::ifstream mode_check(mode_check_file_path);
-						std::string mode_check_value;
-						if( open_file.is_open() )
+						std::ifstream file_mode(file_path_mode);
+						std::string temp_file_mode;
+						while ( ros::ok() )
 						{
-							mode_check >> mode_check_value;
-							mode_value = atoi(mode_check_value.c_str());
-							open_file.close();
-
-							///////////////////////////////////////////////////////////////////////////////////
-							// 27. 모드가 변했기 때문에 1번으로 되돌아간다. //
-							if ( mode_value == 300 || mode_value == 310)
+							if( open_file.is_open() )
 							{
+								file_mode >> temp_file_mode;
+								mode_value = atoi(temp_file_mode.c_str());
+								file_mode.close();
 
-								step_two_order.move_message = 5;
-								move_pub_two.publish(step_two_order);
-
-								std::cout << "mode is : " << mode_value << std::endl;
-								std::cout << "mode changed" << std::endl;
-								break;
-							}
-							///////////////////////////////////////////////////////////////////////////////////
-
-
-							///////////////////////////////////////////////////////////////////////////////////
-							// 28. 일시정지 또는 감지상황에서 의해 3초동안 정지한다. //
-
-							std::ifstream pause_check(pause_110);
-							std::string pause_value;
-							int pause_flag = 0;
-							if( pause_check.is_open() )
-							{
-								pause_check >> pause_value;
-								pause_flag = atoi(pause_value.c_str());
-								pause_check.close();
-							}
-
-							if ( mode_value == 900 || pause_flag == 5 )
-							{
-				    				time_start = std::chrono::system_clock::now();
-								limit_sec = std::chrono::system_clock::now() - time_start;
-								while ( limit_sec.count() < 3.0 )
+								///////////////////////////////////////////////////////////////////////////////////
+								// 27_1. 일시정지 //
+								while ( ros::ok )
 								{
-									limit_sec = std::chrono::system_clock::now() - time_start;
-								}
-							}
-							///////////////////////////////////////////////////////////////////////////////////
+									if ( mode_value == 900 )
+									{
+										file_mode.open(file_path_mode)
+										file_mode >> temp_file_mode;
+										mode_value = atoi(temp_file_mode.c_str());
+										file_mode.close();
 
-						}
-						else
-						{
-							std::cout << "mode check fail" << std::endl;
+						    				time_start = std::chrono::system_clock::now();
+										limit_sec = std::chrono::system_clock::now() - time_start;
+										while ( limit_sec.count() < 0.5 )
+										{
+											limit_sec = std::chrono::system_clock::now() - time_start;
+										}
+									}
+									else
+									{
+										break;
+									}
+								}
+								///////////////////////////////////////////////////////////////////////////////////
+
+								///////////////////////////////////////////////////////////////////////////////////
+								// 27_2. 모드가 변했기 때문에 1번으로 되돌아간다. //
+								if ( mode_value == 300 || mode_value == 310)
+								{
+
+									step_two_order.move_message = 5;
+									step_two_pub.publish(step_two_order);
+
+									std::cout << "mode is : " << mode_value << std::endl;
+									std::cout << "mode changed" << std::endl;
+									break;
+								}
+								///////////////////////////////////////////////////////////////////////////////////
+
+								///////////////////////////////////////////////////////////////////////////////////
+								// 28. 일시정지 또는 감지상황에의해 3초동안 정지한다. //
+
+								std::ifstream file_pause(file_path_pause);
+								std::string temp_file_pause;
+								int pause_flag = 0;
+								if( file_pause.is_open() )
+								{
+									file_pause >> temp_file_pause;
+									pause_flag = atoi(temp_file_pause.c_str());
+									file_pause.close();
+								}
+
+								if ( pause_flag == 5 )
+								{
+					    				time_start = std::chrono::system_clock::now();
+									limit_sec = std::chrono::system_clock::now() - time_start;
+									while ( limit_sec.count() < 3.0 )
+									{
+										limit_sec = std::chrono::system_clock::now() - time_start;
+									}
+								}
+								///////////////////////////////////////////////////////////////////////////////////
+
+								break;
+
+							}
+							else
+							{
+								std::cout << "mode check fail" << std::endl;
+							}
 						}
 						/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1062,42 +1015,26 @@ int main(int argc, char **argv)
 
 						///////////////////////////////////////////////////////////////////////////////////
 						// 29. 포인트를 모두 돌았으면 shutdown_flag = false이다. //
-						// map_move_done_flag_path를 0으로 바꾼다. //
+						// file_path_map_move를 0으로 바꾼다. //
+						// 1번으로 돌아간다. //
 						if ( !shutdown_flag )
 						{
 							std::cout << "clean done" << std::endl;
 
 							step_two_order.move_message = 5;
-							move_pub_two.publish(step_two_order);
+							step_two_pub.publish(step_two_order);
 
-							///////////////////////////////////////////////////////////////////////////////////////////////////
 							// move setting //
-							std::ofstream map_move_done(map_move_done_flag_path);
+							file_map_move.open(file_path_map_load);
 							while ( ros::ok() )
 							{
-								if( map_move_done.is_open() )
+								if( file_map_move.is_open() )
 								{
-									map_move_done << 0 << std::endl;
-									map_move_done.close();
+									file_map_move << 0 << std::endl;
+									file_map_move.close();
 									break;
 								}
 							}
-							///////////////////////////////////////////////////////////////////////////////////////////////////
-
-							///////////////////////////////////////////////////////////////////////////////////////////////////
-							// map load setting //
-							// 0으로 기록하여 맵을 다시 그리도록 한다. //
-							std::ofstream remap_init_func(map_load_flag_path);
-							while ( ros::ok() )
-							{
-								if( map_init_func.is_open() )
-								{
-									remap_init_func << 0 << std::endl;
-									remap_init_func.close();
-									break;
-								}
-							}
-							///////////////////////////////////////////////////////////////////////////////////////////////////
 
 							break;
 						}
