@@ -465,7 +465,6 @@ cd && cd project_black/src/project_ros_cpp/src && vi rotaion_and_move.cpp
 
 #include "project_ros_cpp/nano_control.h"
 #include "project_ros_cpp/get_degree.h"
-#include "project_ros_cpp/step_one_flag.h"
 #include "project_ros_cpp/clean_point.h"
 
 #include "tf/transform_listener.h"
@@ -500,9 +499,9 @@ bool shutdown_flag = true;
 #define degree_range 10 // 각도 범위 // 
 
 // Flags //
-std::string file_path_mode("/home/nvidia/mode");
-std::string file_path_pause("/home/nvidia/mode110");
-std::string file_path_map_move("/home/nvidia/map_move_flag");
+std::string file_path_mode("/home/jetbot/web/mode");
+std::string file_path_pause("/home/jetbot/mode110");
+std::string file_path_map_move("/home/jetbot/map_move_flag");
 
 std::chrono::system_clock::time_point time_start;
 std::chrono::duration<double> limit_sec;
@@ -520,7 +519,7 @@ double in_180_func(double original_degree)
 		original_degree = original_degree - 360.0;
 	}
 
-	return original_degree;'
+	return original_degree;
 }
 
 void find_direction(int point_data_set[][2])
@@ -742,6 +741,7 @@ int main(int argc, char **argv)
 	{
 		if( file_map_move.is_open() )
 		{
+            std::cout << "move setting : move" << std::endl;
 			file_map_move << 1 << std::endl;
 			file_map_move.close();
 			break;
@@ -767,8 +767,8 @@ int main(int argc, char **argv)
 
 
 			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-			// 2. mode가 반드시 100번일때만 코드를 실행한다. //
-			if ( mode_value == 100)
+			// 2. mode가 반드시 100, 110번일때만 코드를 실행한다. //
+			if ( mode_value == 100 || mode_value == 110 )
 			{
 				std::cout << "mode is : " << mode_value << std::endl;
 			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -789,8 +789,13 @@ int main(int argc, char **argv)
 					if (msg)
 					{
 						get_grid_point(msg);
+                        std::cout << "get grid point success !!!" << std::endl;
 						break; 
 					}
+                    else
+                    {
+                        std::cout << "not yet receive !!!" << std::endl;
+                    }
 				}
 				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 				
@@ -855,7 +860,7 @@ int main(int argc, char **argv)
 
 							///////////////////////////////////////////////////////////////////////////////////
 							// 22. 모든 21번의 명령을 0.5초동안 지속하고 멈춘다. //
-			    				time_start = std::chrono::system_clock::now();
+			    			time_start = std::chrono::system_clock::now();
 							limit_sec = std::chrono::system_clock::now() - time_start;
 							while ( limit_sec.count() < 0.05 )
 							{
@@ -932,26 +937,26 @@ int main(int argc, char **argv)
 						std::string temp_file_mode;
 						while ( ros::ok() )
 						{
-							if( open_file.is_open() )
+							if( file_mode.is_open() )
 							{
 								file_mode >> temp_file_mode;
 								mode_value = atoi(temp_file_mode.c_str());
 								file_mode.close();
 
 								///////////////////////////////////////////////////////////////////////////////////
-								// 27_1. 일시정지 //
+								// 27_1. 일시정지 ( 900 모드 ) 모드가 풀리기 전까지 정지한다. //
 								while ( ros::ok )
 								{
 									if ( mode_value == 900 )
 									{
-										file_mode.open(file_path_mode)
+										file_mode.open(file_path_mode);
 										file_mode >> temp_file_mode;
 										mode_value = atoi(temp_file_mode.c_str());
 										file_mode.close();
 
-						    				time_start = std::chrono::system_clock::now();
+						    			time_start = std::chrono::system_clock::now();
 										limit_sec = std::chrono::system_clock::now() - time_start;
-										while ( limit_sec.count() < 0.5 )
+										while ( limit_sec.count() < 0.01 )
 										{
 											limit_sec = std::chrono::system_clock::now() - time_start;
 										}
@@ -965,11 +970,13 @@ int main(int argc, char **argv)
 
 								///////////////////////////////////////////////////////////////////////////////////
 								// 27_2. 모드가 변했기 때문에 1번으로 되돌아간다. //
-								if ( mode_value == 300 || mode_value == 310)
+								if ( mode_value == 300 || mode_value == 310 || mode_value == 990 )
 								{
 
 									step_two_order.move_message = 5;
 									step_two_pub.publish(step_two_order);
+                                    
+                                    shutdown_flag = false;
 
 									std::cout << "mode is : " << mode_value << std::endl;
 									std::cout << "mode changed" << std::endl;
@@ -978,40 +985,53 @@ int main(int argc, char **argv)
 								///////////////////////////////////////////////////////////////////////////////////
 
 								///////////////////////////////////////////////////////////////////////////////////
-								// 28. 일시정지 또는 감지상황에의해 3초동안 정지한다. //
-
-								std::ifstream file_pause(file_path_pause);
-								std::string temp_file_pause;
-								int pause_flag = 0;
-								if( file_pause.is_open() )
+								// 28. 일시정지 ( 110 모드 ) 3초동안 정지한다.  //
+                                std::ifstream file_pause(file_path_pause);
+                                std::string temp_file_pause;
+                                int pause_flag = 0;
+                                
+                                while ( ros::ok )
 								{
-									file_pause >> temp_file_pause;
-									pause_flag = atoi(temp_file_pause.c_str());
-									file_pause.close();
-								}
+                                    if( file_pause.is_open() )
+                                    {
+                                        file_pause >> temp_file_pause;
+                                        pause_flag = atoi(temp_file_pause.c_str());
+                                        file_pause.close();
+                                        
+                                        if ( pause_flag == 5 )
+                                        {
+                                            time_start = std::chrono::system_clock::now();
+                                            limit_sec = std::chrono::system_clock::now() - time_start;
+                                            while ( limit_sec.count() < 3.0 )
+                                            {
+                                                 limit_sec = std::chrono::system_clock::now() - time_start;
+                                            }
+                                        }
+                                        
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        std::cout << "pause file open fail" << std::endl;
+                                    }
+                                }
 
-								if ( pause_flag == 5 )
-								{
-					    				time_start = std::chrono::system_clock::now();
-									limit_sec = std::chrono::system_clock::now() - time_start;
-									while ( limit_sec.count() < 3.0 )
-									{
-										limit_sec = std::chrono::system_clock::now() - time_start;
-									}
-								}
-								///////////////////////////////////////////////////////////////////////////////////
-
-								break;
+                                ///////////////////////////////////////////////////////////////////////////////////
+                                
+                                ///////////////////////////////////////////////////////////////////////////////////
+                                // 어느것도 해당하지 않으면 모드를 검색하는 while 탈출
+                                std::cout << "mode is not changed" << std::endl;
+                                break;
+                                ///////////////////////////////////////////////////////////////////////////////////
 
 							}
 							else
 							{
 								std::cout << "mode check fail" << std::endl;
 							}
+                            
 						}
 						/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
 
 						///////////////////////////////////////////////////////////////////////////////////
 						// 29. 포인트를 모두 돌았으면 shutdown_flag = false이다. //
@@ -1019,30 +1039,37 @@ int main(int argc, char **argv)
 						// 1번으로 돌아간다. //
 						if ( !shutdown_flag )
 						{
-							std::cout << "clean done" << std::endl;
-
-							step_two_order.move_message = 5;
-							step_two_pub.publish(step_two_order);
-
-							// move setting //
-							file_map_move.open(file_path_map_load);
-							while ( ros::ok() )
+                            if ( mode_value == 300 || mode_value == 310 || mode_value == 990 )
 							{
-								if( file_map_move.is_open() )
-								{
-									file_map_move << 0 << std::endl;
-									file_map_move.close();
-									break;
-								}
-							}
-
-							break;
+                                break;
+                            }
+                            else
+                            {
+                                std::cout << "clean done" << std::endl;
+                                
+                                step_two_order.move_message = 5;
+                                step_two_pub.publish(step_two_order);
+                                
+                                // move setting //
+                                file_map_move.open(file_path_map_move);
+                                while ( ros::ok() )
+                                {
+                                    if( file_map_move.is_open() )
+                                    {
+                                        file_map_move << 0 << std::endl;
+                                        file_map_move.close();
+                                        break;
+                                    }
+                                }
+                                
+                                break;   
+                            }
 						}
 						///////////////////////////////////////////////////////////////////////////////////
+                        
 					}
 	
 				}
-
 			}
 			else
 			{
@@ -1076,7 +1103,6 @@ find_package(OpenCV REQUIRED)
    FILES
    get_degree.msg
    nano_control.msg
-   step_one_flag.msg
  )
 
  generate_messages(

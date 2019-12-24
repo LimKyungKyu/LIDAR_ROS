@@ -121,9 +121,9 @@ std_msgs::Int32MultiArray clean_point;
 int map_origin_x = 0;
 int map_origin_y = 0;
 
-std::string file_path_mode("/home/nvidia/mode");
-std::string file_path_map_load("/home/nvidia/map_load_flag");
-std::string file_path_map_move("/home/nvidia/map_move_flag");
+std::string file_path_mode("/home/jetbot/web/mode");
+std::string file_path_map_load("/home/jetbot/map_load_flag");
+std::string file_path_map_move("/home/jetbot/map_move_flag");
 
 
 // 플래그를 변환하는 함수 //
@@ -181,8 +181,9 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// 6. mat을 불러올지, 새로 그릴지 판단한다. 1이면 불러오고 0이면 새로 그린다.//
-	int map_load_flag = mode_or_flag_read(file_path_map_load)
+	int map_load_flag = mode_or_flag_read(file_path_map_load);
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    cv::Mat for_gird_mat;
 
 	if ( map_load_flag == 1 )
 	{
@@ -324,11 +325,12 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 				}
 
 		i_want_to_see = color_map.clone();
+        for_gird_mat = wall_padding_mat.clone();
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 		/////////////////////////////////////////////////
 		// 6_11. 다음 진행부터 맵을 새로 그리지 않도록 세팅한다. //
-		flag_change( file_path_map_load, 1 )
+		flag_change( file_path_map_load, 1 );
 		/////////////////////////////////////////////////
 
 	}
@@ -378,7 +380,7 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 			//path.setMoveInterval(5); // default : 5px = 10cm
 
 			// grid 포인트 작성 //
-			pathList = path.findCoveragePath(start, i_want_to_see, 0); // 1 : 그림표시, 0 : 표시안함 //
+			pathList = path.findCoveragePath(start, for_gird_mat, 0); // 1 : 그림표시, 0 : 표시안함 //
 
 			clean_point.data.clear();
 			for (auto it = pathList.begin(); it != pathList.end(); ++it)
@@ -391,20 +393,18 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 			clean_point.data.push_back(map_origin_x);
 			clean_point.data.push_back(map_origin_y);
 
-			/*
+
 			for ( int i=0; i< clean_point.data.size(); i+=2 )
 			{
 				std::cout << "pub [" << clean_point.data[i] << ", "
 				<< clean_point.data[i+1] << "]" <<std::endl;
 			}
-			*/
+            
 			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-			//cv::imshow("meta_data", meta_data_resize);
-			//cv::imshow("original", original);
-			//cv::imshow("back_ground_white", back_ground_white);
-			//cv::imshow("color_map", color_map);
-
+            
+            //cv::circle(i_want_to_see, cv::Point(nano_origin_x, nano_origin_y), 10, cv::Scalar(255, 0, 0), -1);
+			//cv::imshow("check_window", i_want_to_see);
+			//cv::waitKey(0);
 			break;
 		}
 		catch(tf2::LookupException& e)
@@ -426,16 +426,16 @@ void wait_control_tower()
 		if(move_ready_flag)
 		{
 			int move_ready = move_ready_flag->data;
-			if ( move_ready == 100)
+			if ( move_ready == 100 || move_ready == 110 )
 			{
+                std::cout << "[clean map] mode is : " << move_ready << std::endl;
 				break;
 			}
 		}
-		else
-		{
-			std::cout << "mode is : " << move_ready << std::endl;
+        else
+        {
 			std::cout << "wait drawing map" <<std::endl;
-		}
+        }
 	}
 }
 
@@ -452,9 +452,19 @@ void wait_cartographer_map_data()
 
 			// 5. mapCallback 함수를 호출한다. //
 			mapCallback(grid);
+            
+            // 11. 청소할 point를 Mat의 (i,j)형태로 publish한다. //
+            std::chrono::system_clock::time_point time_start;
+            std::chrono::duration<double> limit_sec;
+            time_start = std::chrono::system_clock::now();
+            limit_sec = std::chrono::system_clock::now() - time_start;
+            while ( limit_sec.count() < 3.0 )
+            {
+                point_pub.publish(clean_point);
+                limit_sec = std::chrono::system_clock::now() - time_start;
+            }
 
-			// 11. 청소할 point를 Mat의 (i,j)형태로 publish한다. //
-			point_pub.publish(clean_point);
+            std::cout << "[clean map] grid point send ok" << std::endl;
 			break;
 		}
 		else
@@ -502,7 +512,7 @@ void draw_func()
 			// 모든 포인트를 돌았으면 맵을 새로그릴 준비를 하고 드로잉 while을 break로 벗어나고 //
 			// rotation_and_move.cpp 에서 보내는 100 메세지를 기다린다. //
 
-			int map_move_flag = file_path_mode(file_path_map_move);
+			int map_move_flag = mode_or_flag_read(file_path_map_move);
 			if ( map_move_flag == 1 )
 			{
 				std::cout << "not yet done, nano will move" << std::endl;
@@ -557,8 +567,8 @@ void draw_func()
 					if ( k<0 || k>=i_want_to_see.rows || l<0 || l>=i_want_to_see.cols ) {}
 					else
 					{
-						if (i_want_to_see.at<cv::Vec3b>(k,l) != cv::Vec3b(0, 0, 0)) {}
-						else { i_want_to_see.at<cv::Vec3b>(k,l) = cv::Vec3b(128,128,128); }
+						if (i_want_to_see.at<cv::Vec3b>(l,k) != cv::Vec3b(0, 0, 0)) {}
+						else { i_want_to_see.at<cv::Vec3b>(l,k) = cv::Vec3b(128,128,128); }
 					}
 				}
 			}
@@ -568,7 +578,7 @@ void draw_func()
 			// 20. 2초 마다 라인을 그린다. //
 			if ( limit_sec.count() > 2.0 )
 			{
-				if ( old_x == 0 && old_y == 0 )
+				if ( old_and_new_xy[0] == 0 && old_and_new_xy[1] == 0 )
 				{
 					old_and_new_xy[0] = old_and_new_xy[2];
 					old_and_new_xy[1] = old_and_new_xy[3];
@@ -623,13 +633,12 @@ int main(int argc, char **argv)
 		wait_cartographer_map_data();
 
 		// 12. 드로잉을 시작한다. //
-		draw_func();	
-	}	
+		draw_func();
+        printf("draw func done\n");
+	}
+    
 	return 0;
 }
-
-
-
 ############################################################################################################################
 /*
 cmake_minimum_required(VERSION 2.8.3)

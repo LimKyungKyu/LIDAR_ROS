@@ -317,7 +317,7 @@ def get_from_raw():
 	global exp_minus
 	yaw = 0.0
 
-	#sending_time = time.time()
+	sending_time = time.time()
 
 	while not rospy.is_shutdown():
 		accel_data = sensor.get_accel_data()
@@ -346,7 +346,7 @@ def get_from_raw():
 		for_pub.roll = float(roll)
 		for_pub.pitch = float(pitch)
 		for_pub.yaw = float(yaw)
-		#for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC))
+		for_pub.imu_time_stamp = float(time.clock_gettime(time.CLOCK_MONOTONIC))
 
 		#print("%f" % exp_minus)
 		#print("%s" % roll)
@@ -354,12 +354,10 @@ def get_from_raw():
 		#print("%s" % yaw)
 		#print("%s" % dt)
 		#print("")
-		#if ( (time.time()-sending_time) > 0.01 ):
-		#	pub.publish(for_pub)
-		#	print("i send degree yaw %f" % for_pub.yaw)
-		#	sending_time = time.time()
-
-		pub.publish(for_pub)
+		if ( (time.time()-sending_time) > 0.01 ):
+			pub.publish(for_pub)
+			print("i send degree yaw %f" % for_pub.yaw)
+			sending_time = time.time()
 	
 
 start_value = 0
@@ -369,20 +367,18 @@ def start_sign(not_use):
 	
 
 if __name__=='__main__':
-
 	try:
 		rospy.init_node('mpu_6050_node', anonymous=True)
 		pub = rospy.Publisher('mpu_6050_degree', get_degree, queue_size=1)
 		rospy.Subscriber('project_degree', get_degree, start_sign)
 		while not rospy.is_shutdown():
-			print("wait init")
-			time.sleep(0.1)
-			while (start_value):
+			if (start_value):
 				init_imu_yaw()
 				get_from_raw()
 
 	except rospy.ROSInterruptException:
 		pass
+
 ///////////////////////////////////////////////////////////////////////////////
 
 cd && cd project_black/src/project_ros_python/src && sudo chmod +x mpu_6050.py

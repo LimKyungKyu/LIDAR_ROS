@@ -1,0 +1,176 @@
+#include <ros/ros.h>
+#include <unistd.h>
+#include <fstream>
+#include <iostream>
+#include <chrono>
+#include <std_msgs/Int32.h>
+#include "project_ros_cpp/nano_control.h"
+
+
+std::chrono::system_clock::time_point time_start;
+std::chrono::duration<double> limit_sec;
+
+std::chrono::system_clock::time_point time_start_func;
+std::chrono::duration<double> limit_sec_func;
+
+std_msgs::Int32 control_mode_value;
+project_ros_cpp::nano_control manual_order;
+
+int control_mode = 0;
+
+std::string file_path_mode("/home/jetbot/web/mode.txt");
+std::string file_path_pause("/home/jetbot/mode110");
+
+
+void sleep_func(double limit_time)
+{
+    time_start_func = std::chrono::system_clock::now();
+	limit_sec_func = std::chrono::system_clock::now() - time_start_func;
+	while ( limit_sec_func.count() < limit_time )
+	{
+	     limit_sec_func = std::chrono::system_clock::now() - time_start_func;
+	}
+}
+
+
+
+int main(int argc, char **argv)
+{
+	ros::init(argc, argv, "control_tower_node"); // 노드명 my_publisher_node로 초기화
+	ros::NodeHandle nh; // ROS 시스템과 통신을 위한 노드 핸들을 nh로 선언
+
+    ros::Publisher control_tower_pub = nh.advertise<std_msgs::Int32>("control_tower_topic", 1);
+    ros::Publisher nano_manual_pub = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
+
+    
+	while ( ros::ok() )
+	{
+		std::ifstream file_mode(file_path_mode);
+		std::string temp_file_mode;
+		if( file_mode.is_open() )
+		{
+			file_mode >> temp_file_mode;
+			control_mode = atoi(temp_file_mode.c_str());
+			std::cout << "mode is : " << control_mode << std::endl;
+			file_mode.close();
+		}
+		else
+		{
+			std::cout << "open fail" << std::endl;
+		}
+
+		if ( control_mode == 100 )
+		{
+                // 일반주행 //
+                control_mode_value.data=100;
+                control_tower_pub.publish(control_mode_value);
+            
+                sleep_func(1.0);
+            
+                std::ofstream file_mode_write(file_path_mode);
+                file_mode_write << 0 << std::endl;
+                file_mode_write.close();
+            
+                std::cout << "mode is : " << control_mode << std::endl;
+                std::cout << "just move mode" << std::endl;
+		}
+		else if ( control_mode == 110 )
+		{
+                // 일반주행 + 감지모드 //
+                control_mode_value.data=110;
+                control_tower_pub.publish(control_mode_value);
+            
+                sleep_func(1.0);
+            
+                std::ofstream file_mode_write(file_path_mode);
+                file_mode_write << 0 << std::endl;
+                file_mode_write.close();
+            
+                std::cout << "mode is : " << control_mode << std::endl;
+                std::cout << "if detect something : pause (3 sec) mode" << std::endl;
+		}
+		else if ( control_mode >= 300 && control_mode <= 305 )
+        {
+            while( ros::ok() )
+            {
+                file_mode.open(file_path_mode);
+                if( file_mode.is_open() )
+                {
+                    file_mode >> temp_file_mode;
+                    control_mode = atoi(temp_file_mode.c_str());
+                    std::cout << "mode is : " << control_mode << std::endl;
+                    file_mode.close();
+                }
+                else
+                {
+                    std::cout << "open fail" << std::endl;
+                }
+                
+                if(control_mode == 301)
+                {
+                    //직진
+                    manual_order.move_message = 1;
+                    nano_manual_pub.publish(manual_order);
+                    //sleep_func(0.01);
+                    //manual_order.move_message = 5;
+                    //nano_manual_pub.publish(manual_order);
+                }
+                else if(control_mode == 302)
+                {
+                    //좌회전
+                    manual_order.move_message = 7;
+                    nano_manual_pub.publish(manual_order);
+                    //sleep_func(0.01);
+                    //manual_order.move_message = 5;
+                    //nano_manual_pub.publish(manual_order);
+                }
+                else if(control_mode == 303)
+                {
+                    //우회전
+                    manual_order.move_message = 6;
+                    nano_manual_pub.publish(manual_order);
+                    //sleep_func(0.01);
+                    //manual_order.move_message = 5;
+                    //nano_manual_pub.publish(manual_order);
+                }
+                else if(control_mode == 304)
+                {
+                    //후진
+                    manual_order.move_message = 4;
+                    nano_manual_pub.publish(manual_order);
+                    //sleep_func(0.01);
+                    //manual_order.move_message = 5;
+                    //nano_manual_pub.publish(manual_order);
+                }
+                else if(control_mode == 305) 
+                {
+                    //정지
+                    manual_order.move_message = 5;
+                    nano_manual_pub.publish(manual_order);
+                }
+                else if(control_mode == 100 or control_mode == 110 or control_mode == 200 or control_mode == 310 )
+                {
+                    break;
+                }
+            }
+        }
+        else if ( control_mode == 310 )
+		{
+            std::cout << "mode is : " << control_mode << std::endl;
+            std::cout << "tracking mode" << std::endl;
+		}
+		else if ( control_mode == 900 )
+		{
+            std::cout << "mode is : " << control_mode << std::endl;
+            std::cout << "pause (infinite) mode" << std::endl;
+		}
+        
+        // next order waiting //
+        ///////////////////////////////////////////////////////////////////
+		sleep_func(0.1);
+        ///////////////////////////////////////////////////////////////////
+
+	}
+	return 0;
+}
+
