@@ -114,7 +114,6 @@ cd && cd project_black/src/project_ros_cpp/src && vi clean_map.cpp
 #define move_fill_area 6
 ///////////////////////////////////////////
 
-
 cv::Mat i_want_to_see;
 std_msgs::Int32MultiArray clean_point;
 
@@ -616,15 +615,17 @@ void draw_func()
 }
 
 
+
 int main(int argc, char **argv)
 {
+   
 	// 1. ROS init //
 	ros::init(argc, argv, "map_reader");
 
 	// 2. map load setting //
 	flag_change(file_path_map_load, 0); // 1 : 맵을 로드한다, 0 : 새로 그린다. //
 
-	while ( ros::ok() )
+	while ( true )
 	{
 		// 3. rotation_and_move.cpp 에서 보내는 100 메세지를 수신할때까지 대기한다. //
 		wait_control_tower();
@@ -634,9 +635,7 @@ int main(int argc, char **argv)
 
 		// 12. 드로잉을 시작한다. //
 		draw_func();
-        printf("draw func done\n");
 	}
-    
 	return 0;
 }
 ############################################################################################################################

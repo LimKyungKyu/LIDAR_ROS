@@ -18,7 +18,7 @@ project_ros_cpp::nano_control manual_order;
 
 int control_mode = 0;
 
-std::string file_path_mode("/home/jetbot/web/mode.txt");
+std::string file_path_mode("/home/jetbot/web/mode");
 std::string file_path_pause("/home/jetbot/mode110");
 
 
@@ -42,7 +42,6 @@ int main(int argc, char **argv)
     ros::Publisher control_tower_pub = nh.advertise<std_msgs::Int32>("control_tower_topic", 1);
     ros::Publisher nano_manual_pub = nh.advertise<project_ros_cpp::nano_control>("ros_move_topic", 1);
 
-    
 	while ( ros::ok() )
 	{
 		std::ifstream file_mode(file_path_mode);
@@ -61,33 +60,27 @@ int main(int argc, char **argv)
 
 		if ( control_mode == 100 )
 		{
-                // 일반주행 //
+            // 일반주행 //
+            std::cout << "mode send (3 sec) : " << control_mode << std::endl;
+            std::cout << "just move mode" << std::endl;
+            time_start = std::chrono::system_clock::now();
+            limit_sec = std::chrono::system_clock::now() - time_start;
+            while ( limit_sec.count() < 3.0 )
+            {
                 control_mode_value.data=100;
                 control_tower_pub.publish(control_mode_value);
+                limit_sec = std::chrono::system_clock::now() - time_start;
+            }
             
-                sleep_func(1.0);
-            
-                std::ofstream file_mode_write(file_path_mode);
-                file_mode_write << 0 << std::endl;
-                file_mode_write.close();
-            
-                std::cout << "mode is : " << control_mode << std::endl;
-                std::cout << "just move mode" << std::endl;
+            std::ofstream file_mode_write(file_path_mode);
+            file_mode_write << 0 << std::endl;
+            file_mode_write.close();
 		}
 		else if ( control_mode == 110 )
 		{
-                // 일반주행 + 감지모드 //
-                control_mode_value.data=110;
-                control_tower_pub.publish(control_mode_value);
-            
-                sleep_func(1.0);
-            
-                std::ofstream file_mode_write(file_path_mode);
-                file_mode_write << 0 << std::endl;
-                file_mode_write.close();
-            
-                std::cout << "mode is : " << control_mode << std::endl;
-                std::cout << "if detect something : pause (3 sec) mode" << std::endl;
+            // 일반주행 + 감지모드 //
+            std::cout << "mode send (3 sec) : " << control_mode << std::endl;
+            std::cout << "if detect something : pause (3 sec) mode" << std::endl;
 		}
 		else if ( control_mode >= 300 && control_mode <= 305 )
         {
@@ -163,6 +156,11 @@ int main(int argc, char **argv)
 		{
             std::cout << "mode is : " << control_mode << std::endl;
             std::cout << "pause (infinite) mode" << std::endl;
+		}
+		else if ( control_mode == 990 )
+		{
+            std::cout << "mode is : " << control_mode << std::endl;
+            std::cout << "pause (3sec) mode" << std::endl;
 		}
         
         // next order waiting //
